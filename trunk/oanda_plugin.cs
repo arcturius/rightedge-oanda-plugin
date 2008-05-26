@@ -17,30 +17,7 @@ using fxClientAPI;
 
 /*
 FIXES:
- 
- * 1/1/0001 tick problem
-
- * improve logging 
-   * IO Exceptions still popping up when using the connect/disconenct log statements...(issues with thread concurrency i think)
-
- * order failure cases...
-   * do they need to set OrderState => Invalid/Rejected??
-   * call OrderUpdated()??
-
- * submitting a new broker order from the plugin (external events)
-   * the external close position submits a new broker order via OrderUpdated, but RE is not tieing it to the original open
-  
- * cleanup refactoring
-   * order_plugin.cs should be split up. support objects needs their own files.
-   * handleAccountResponder()
-     * there are some common elements that can be broken out
-     * the specific transaction procedures are getting too long and should be sub'd down.
- 
- * need a mechanism for transporting data tied to an order from the system to the broker plugin
-   * tag property?
-   * exchange property?
- 
- * orders price bounds
+  * orders price bounds
     * currently using limitprice, but this conflicts with some order types
       * need a better way to transport the bound price point
     * currently bounds range is a plugin option only
@@ -60,16 +37,7 @@ FIXES:
     * fix & verify all broker accont status functions
     * etc...
  
- * fix cross price calculation
-   * for pairs based on the acct currency
-   * for pairs not based on the acct currency
-  
- * fix setAccountState() and any serialization saving/loading
-
- * implement getShortedCash()
- 
- 
-TESTING:
+ TESTING:
  * order testing (limit/market/stop/target - open/close/cancel/modify/hit)
     * real values and invalid/unset values
     * all RE api calls work and have the proper result at oanda...
@@ -78,11 +46,6 @@ TESTING:
     * when a market order is submitted and there are existing open shares in any position record
     the plugin should match/fill/close the pending market order when transaction notices for the affected open orders come in
     also the affected traderecord/positionrecord need to be updated
-
-MISC:
- * write some basic docs
-     * feature usage docs
-     * xmldoc code
 */
 namespace OandA_RightEdge_Plugin
 {
