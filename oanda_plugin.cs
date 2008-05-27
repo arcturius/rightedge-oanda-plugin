@@ -47,7 +47,7 @@ FIXES:
     the plugin should match/fill/close the pending market order when transaction notices for the affected open orders come in
     also the affected traderecord/positionrecord need to be updated
 */
-namespace OandA_RightEdge_Plugin
+namespace RightEdgeOandaPlugin
 {
     #region OAPluginException
     /// <summary>
@@ -286,7 +286,7 @@ namespace OandA_RightEdge_Plugin
         [Description("Set this to the full slip-able range size."), Category("Slippage Control")]
         public double Bounds { set { _bounds = value; } get { return (_bounds); } }
 
-        private string _log_fname = "C:\\Storage\\Src\\OandA_RightEdge_Plugin.log";
+        private string _log_fname = "C:\\RightEdgeOandaPlugin.log";
         [Description("Set this to the file name for logging."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
         public string LogFileName { set { _log_fname = value; } get { return (_log_fname); } }
 
@@ -1137,12 +1137,12 @@ namespace OandA_RightEdge_Plugin
 
         // Get or set the name portion of authentication if required.  It is
         // not needed in this example.
-        private string _username = "loftismark1_api_game";
+        private string _username = "";
         public string UserName { get { return (_username); } set { _username = value; } }
 
         // Get or set the password portion of authentication if required.  It is
         // not needed in this example.
-        private string _password = "Chakra420";
+        private string _password = "";
         public string Password { get { return (_password); } set { _password = value; } }
 
 
@@ -1484,6 +1484,15 @@ namespace OandA_RightEdge_Plugin
                 _gtd_event = value;
             }
         }
+        private void fireTickEvent(Symbol sym, TickData tick)
+        {
+            if (tick.time.Month == 1 && tick.time.Day == 1 && (tick.time.Year == 1 || tick.time.Year == 2001))
+            {
+                _log.captureDebug("BAD TICK : time='" + tick.time + "' price='" + tick.price + "' type='" + tick.tickType + "' size='" + tick.size + "'");
+                return;
+            }
+            _gtd_event(sym, tick);
+        }
 
         private List<RateTicker> _rate_tickers= new List<RateTicker>();
 
@@ -1492,10 +1501,10 @@ namespace OandA_RightEdge_Plugin
             try
             {
                 TickData bid_tick = OandAUtils.convertTicks_bid(ei.Tick);
-                _gtd_event(rt.Symbol, bid_tick);
+                fireTickEvent(rt.Symbol, bid_tick);
 
                 TickData ask_tick = OandAUtils.convertTicks_ask(ei.Tick);
-                _gtd_event(rt.Symbol, ask_tick);
+                fireTickEvent(rt.Symbol, ask_tick);
 
                 if (ei.Tick.Ask > rt.High)
                 {
@@ -1503,7 +1512,7 @@ namespace OandA_RightEdge_Plugin
                     TickData tick = OandAUtils.convertTicks(ei.Tick);
                     tick.tickType = TickType.HighPrice;
                     tick.price = rt.High;
-                    _gtd_event(rt.Symbol, tick);
+                    fireTickEvent(rt.Symbol, tick);
                 }
                 if (ei.Tick.Bid < rt.Low)
                 {
@@ -1511,17 +1520,17 @@ namespace OandA_RightEdge_Plugin
                     TickData tick = OandAUtils.convertTicks(ei.Tick);
                     tick.tickType = TickType.LowPrice;
                     tick.price = rt.Low;
-                    _gtd_event(rt.Symbol, tick);
+                    fireTickEvent(rt.Symbol, tick);
                 }
 
                 TickData volume_tick = OandAUtils.convertTicks(ei.Tick);
                 volume_tick.tickType = TickType.DailyVolume;
                 volume_tick.size = (ulong)rt.TickCount;
                 //volume_tick.price = (double)rt.TickCount;
-                _gtd_event(rt.Symbol, volume_tick);
+                fireTickEvent(rt.Symbol, volume_tick);
 
                 TickData trade_tick = OandAUtils.convertTicks_trade(ei.Tick);
-                _gtd_event(rt.Symbol, trade_tick);
+                fireTickEvent(rt.Symbol, trade_tick);
             }
             catch (Exception e)
             {

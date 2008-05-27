@@ -1,4 +1,4 @@
-﻿namespace OandA_RightEdge_Plugin
+﻿namespace RightEdgeOandaPlugin
 {
     partial class OandAPluginOptionsControl
     {
