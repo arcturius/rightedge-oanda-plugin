@@ -1,4 +1,4 @@
-﻿namespace OandA_RightEdge_Plugin
+﻿namespace RightEdgeOandaPlugin
 {
     partial class OandAPluginOptionsForm
     {
@@ -28,9 +28,9 @@
         /// </summary>
         private void InitializeComponent()
         {
-            OandA_RightEdge_Plugin.OAPluginOptions oandAPluginOptions2 = new OandA_RightEdge_Plugin.OAPluginOptions();
+            RightEdgeOandaPlugin.OAPluginOptions oandAPluginOptions2 = new RightEdgeOandaPlugin.OAPluginOptions();
             this.toolStripContainer1 = new System.Windows.Forms.ToolStripContainer();
-            this.oandAPluginOptionsControl1 = new OandA_RightEdge_Plugin.OandAPluginOptionsControl();
+            this.oandAPluginOptionsControl1 = new RightEdgeOandaPlugin.OandAPluginOptionsControl();
             this.menuStrip1 = new System.Windows.Forms.MenuStrip();
             this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.saveToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -66,7 +66,7 @@
             this.oandAPluginOptionsControl1.Name = "oandAPluginOptionsControl1";
             oandAPluginOptions2.GameServerEnabled = true;
             oandAPluginOptions2.LogErrorsEnabled = true;
-            oandAPluginOptions2.LogFileName = "C:\\Storage\\Src\\OandA_RightEdge_Plugin.log";
+            oandAPluginOptions2.LogFileName = "C:\\Storage\\Src\\RightEdgeOandaPlugin.log";
             oandAPluginOptions2.OptionsFileName = "";
             oandAPluginOptions2.ShowErrorsEnabled = true;
             oandAPluginOptions2.WeekendEndDay = System.DayOfWeek.Sunday;

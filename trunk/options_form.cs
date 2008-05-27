@@ -6,7 +6,7 @@ using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
 
-namespace OandA_RightEdge_Plugin
+namespace RightEdgeOandaPlugin
 {
     public partial class OandAPluginOptionsForm : Form
     {
