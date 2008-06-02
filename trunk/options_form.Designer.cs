@@ -28,7 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-            RightEdgeOandaPlugin.OAPluginOptions oandAPluginOptions2 = new RightEdgeOandaPlugin.OAPluginOptions();
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(OandAPluginOptionsForm));
             this.toolStripContainer1 = new System.Windows.Forms.ToolStripContainer();
             this.oandAPluginOptionsControl1 = new RightEdgeOandaPlugin.OandAPluginOptionsControl();
             this.menuStrip1 = new System.Windows.Forms.MenuStrip();
@@ -47,11 +47,11 @@
             // toolStripContainer1.ContentPanel
             // 
             this.toolStripContainer1.ContentPanel.Controls.Add(this.oandAPluginOptionsControl1);
-            this.toolStripContainer1.ContentPanel.Size = new System.Drawing.Size(292, 242);
+            this.toolStripContainer1.ContentPanel.Size = new System.Drawing.Size(357, 364);
             this.toolStripContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.toolStripContainer1.Location = new System.Drawing.Point(0, 0);
             this.toolStripContainer1.Name = "toolStripContainer1";
-            this.toolStripContainer1.Size = new System.Drawing.Size(292, 266);
+            this.toolStripContainer1.Size = new System.Drawing.Size(357, 388);
             this.toolStripContainer1.TabIndex = 0;
             this.toolStripContainer1.Text = "toolStripContainer1";
             // 
@@ -64,18 +64,8 @@
             this.oandAPluginOptionsControl1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.oandAPluginOptionsControl1.Location = new System.Drawing.Point(0, 0);
             this.oandAPluginOptionsControl1.Name = "oandAPluginOptionsControl1";
-            oandAPluginOptions2.GameServerEnabled = true;
-            oandAPluginOptions2.LogErrorsEnabled = true;
-            oandAPluginOptions2.LogFileName = "C:\\Storage\\Src\\RightEdgeOandaPlugin.log";
-            oandAPluginOptions2.OptionsFileName = "";
-            oandAPluginOptions2.ShowErrorsEnabled = true;
-            oandAPluginOptions2.WeekendEndDay = System.DayOfWeek.Sunday;
-            oandAPluginOptions2.WeekendEndTime = System.TimeSpan.Parse("11:00:00");
-            oandAPluginOptions2.WeekendFilterEnabled = true;
-            oandAPluginOptions2.WeekendStartDay = System.DayOfWeek.Friday;
-            oandAPluginOptions2.WeekendStartTime = System.TimeSpan.Parse("17:00:00");
-            this.oandAPluginOptionsControl1.Opts = oandAPluginOptions2;
-            this.oandAPluginOptionsControl1.Size = new System.Drawing.Size(292, 242);
+            this.oandAPluginOptionsControl1.Opts = ((RightEdgeOandaPlugin.OAPluginOptions)(resources.GetObject("oandAPluginOptionsControl1.Opts")));
+            this.oandAPluginOptionsControl1.Size = new System.Drawing.Size(357, 364);
             this.oandAPluginOptionsControl1.TabIndex = 0;
             // 
             // menuStrip1
@@ -85,7 +75,7 @@
             this.fileToolStripMenuItem});
             this.menuStrip1.Location = new System.Drawing.Point(0, 0);
             this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(292, 24);
+            this.menuStrip1.Size = new System.Drawing.Size(357, 24);
             this.menuStrip1.TabIndex = 0;
             this.menuStrip1.Text = "menuStrip1";
             // 
@@ -101,25 +91,25 @@
             // saveToolStripMenuItem
             // 
             this.saveToolStripMenuItem.Name = "saveToolStripMenuItem";
-            this.saveToolStripMenuItem.Size = new System.Drawing.Size(152, 22);
+            this.saveToolStripMenuItem.Size = new System.Drawing.Size(117, 22);
             this.saveToolStripMenuItem.Text = "&Save";
             this.saveToolStripMenuItem.Click += new System.EventHandler(this.saveToolStripMenuItem_Click);
             // 
             // cancelToolStripMenuItem
             // 
             this.cancelToolStripMenuItem.Name = "cancelToolStripMenuItem";
-            this.cancelToolStripMenuItem.Size = new System.Drawing.Size(152, 22);
+            this.cancelToolStripMenuItem.Size = new System.Drawing.Size(117, 22);
             this.cancelToolStripMenuItem.Text = "&Cancel";
             this.cancelToolStripMenuItem.Click += new System.EventHandler(this.cancelToolStripMenuItem_Click);
             // 
-            // OptionsForm
+            // OandAPluginOptionsForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(292, 266);
+            this.ClientSize = new System.Drawing.Size(357, 388);
             this.Controls.Add(this.toolStripContainer1);
             this.MainMenuStrip = this.menuStrip1;
-            this.Name = "OptionsForm";
+            this.Name = "OandAPluginOptionsForm";
             this.Text = "OptionsForm";
             this.toolStripContainer1.ContentPanel.ResumeLayout(false);
             this.toolStripContainer1.TopToolStripPanel.ResumeLayout(false);

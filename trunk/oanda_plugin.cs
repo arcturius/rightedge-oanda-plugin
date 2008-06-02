@@ -15,25 +15,22 @@ using RightEdge.Common;
 
 using fxClientAPI;
 
+
 /*
 FIXES:
-  * orders price bounds
-    * currently using limitprice, but this conflicts with some order types
-      * need a better way to transport the bound price point
-    * currently bounds range is a plugin option only
-      * with a better transport mechanism this could be on a per order basis.
-    * what event does oanda fire if a (market/limit) order is rejected due to a bounds violation?
+
+ * verify that when a broker order is rejected/invalidated it's parent OrderRecord gets cleaned up appropriately...
+
+ * orders price bounds
+   * currently using limitprice, but this conflicts with some order types
+     * need a better way to transport the bound price point
+   * currently bounds range is a plugin option only
+     * with a better transport mechanism this could be on a per order basis.
+   * what event does oanda fire if a (market/limit) order is rejected due to a bounds violation?
  
  * fix account handling
     * curently using the exchange field as the transport
       * for getting an order specific account
-    * verify handler/account needs (list<accounthandler> or just a single object?)
-    * bind _orderbook.Book to pair/account not just pair
-   orderbook is a dict<acct,bsrl>
-     bsrl is a dict<sym,bprl>
-       brpl is a dict <posid,bpr>
-         bpr is a dict<order_id,TradeRecord)
-    * handle transaction responses based on pair/account
     * fix & verify all broker accont status functions
     * etc...
  
@@ -150,6 +147,7 @@ namespace RightEdgeOandaPlugin
     }
     #endregion
 
+    [Serializable]
     public class OAPluginOptions
     {
         public OAPluginOptions() { }
@@ -162,14 +160,22 @@ namespace RightEdgeOandaPlugin
             _do_weekend_filter = rsrc._do_weekend_filter;
             _use_bounds = rsrc._use_bounds;
             _log_errors = rsrc._log_errors;
+            _log_trade_errors = rsrc._log_trade_errors;
 
             _log_re_in = rsrc._log_re_in;
             _log_re_out = rsrc._log_re_out;
             _log_oa_in = rsrc._log_oa_in;
             _log_oa_out = rsrc._log_oa_out;
 
+            _order_log_fname = rsrc._order_log_fname;
+
+            _log_fxclient = rsrc._log_fxclient;
+            _fxclient_log_fname = rsrc._fxclient_log_fname;
+
             _log_debug = rsrc._log_debug;
             _log_fname = rsrc._log_fname;
+            _log_ticks = rsrc._log_ticks;
+            _tick_log_fname = rsrc._tick_log_fname;
             _opt_fname = rsrc._opt_fname;
             _show_errors = rsrc._show_errors;
             _log_unknown_events = rsrc._log_unknown_events;
@@ -185,11 +191,17 @@ namespace RightEdgeOandaPlugin
         {
             try
             {
-                if (settings.ContainsKey("LogFileName"))          { _log_fname = settings["LogFileName"]; }
+                if (settings.ContainsKey("LogFileName")) { _log_fname = settings["LogFileName"]; }
+                if (settings.ContainsKey("OrderLogFileName")) { _order_log_fname = settings["OrderLogFileName"]; }
+                if (settings.ContainsKey("TickLogFileName")) { _tick_log_fname = settings["TickLogFileName"]; }
+                if (settings.ContainsKey("FXClientLogFileName")) { _fxclient_log_fname = settings["FXClientLogFileName"]; }
+                if (settings.ContainsKey("LogFXClientEnabled")) { _log_fxclient = bool.Parse(settings["LogFXClientEnabled"]); }
+                if (settings.ContainsKey("LogTicksEnabled")) { _log_ticks = bool.Parse(settings["LogTicksEnabled"]); }
                 if (settings.ContainsKey("GameServerEnabled"))    { _use_game = bool.Parse(settings["GameServerEnabled"]); }
                 if (settings.ContainsKey("BoundsEnabled")) { _use_bounds = bool.Parse(settings["BoundsEnabled"]); }
-                
+
                 if (settings.ContainsKey("LogErrorsEnabled")) { _log_errors = bool.Parse(settings["LogErrorsEnabled"]); }
+                if (settings.ContainsKey("LogTradeErrorsEnabled")) { _log_trade_errors = bool.Parse(settings["LogTradeErrorsEnabled"]); }
 
                 if (settings.ContainsKey("LogOandaSend")) { _log_oa_out = bool.Parse(settings["LogOandaSend"]); }
                 if (settings.ContainsKey("LogOandaReceive")) { _log_oa_in = bool.Parse(settings["LogOandaReceive"]); }
@@ -217,9 +229,15 @@ namespace RightEdgeOandaPlugin
         public bool saveRESettings(ref SerializableDictionary<string, string> settings)
         {
             settings["LogFileName"] = _log_fname;
+            settings["OrderLogFileName"] = _order_log_fname;
+            settings["TickLogFileName"] = _tick_log_fname;
+            settings["FXClientLogFileName"] = _fxclient_log_fname;
             settings["GameServerEnabled"] = _use_game.ToString();
             settings["BoundsEnabled"] = _use_bounds.ToString();
             settings["LogErrorsEnabled"] = _log_errors.ToString();
+            settings["LogTradeErrorsEnabled"] = _log_trade_errors.ToString();
+            settings["LogTicksEnabled"] = _log_ticks.ToString();
+            settings["LogFXClientEnabled"] = _log_fxclient.ToString();
 
             settings["LogOandaSend"] = _log_oa_out.ToString();
             settings["LogOandaReceive"] = _log_oa_in.ToString();
@@ -286,6 +304,26 @@ namespace RightEdgeOandaPlugin
         [Description("Set this to the full slip-able range size."), Category("Slippage Control")]
         public double Bounds { set { _bounds = value; } get { return (_bounds); } }
 
+        private string _order_log_fname = "C:\\orders.xml";
+        [Description("Set this to the file name for storing order information."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        public string OrderLogFileName { set { _order_log_fname = value; } get { return (_order_log_fname); } }
+
+        private string _fxclient_log_fname = "C:\\fxclient.log";
+        [Description("Set this to the file name for the internal fxClientAPI logging."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        public string FXClientLogFileName { set { _fxclient_log_fname = value; } get { return (_fxclient_log_fname); } }
+
+        private bool _log_fxclient = false;
+        [Description("Enable this for the raw internal fxClientAPI log. WARNING : this is a HUGE FILE and will contain your PASSWORD IN PLAIN TEXT!!"), Category("Logging")]
+        public bool LogFXClientEnabled { set { _log_fxclient = value; } get { return (_log_fxclient); } }
+
+        private string _tick_log_fname = "C:\\tick.log";
+        [Description("Set this to the file name for logging tick data."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        public string TickLogFileName { set { _tick_log_fname = value; } get { return (_tick_log_fname); } }
+
+        private bool _log_ticks = false;
+        [Description("Set this to true to enable logging of tick data to the tick log."), Category("Logging")]
+        public bool LogTicksEnabled { set { _log_ticks = value; } get { return (_log_ticks); } }
+
         private string _log_fname = "C:\\RightEdgeOandaPlugin.log";
         [Description("Set this to the file name for logging."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
         public string LogFileName { set { _log_fname = value; } get { return (_log_fname); } }
@@ -293,6 +331,10 @@ namespace RightEdgeOandaPlugin
         private bool _log_errors = true;
         [Description("Set this to true to enable logging of errors."), Category("Logging")]
         public bool LogErrorsEnabled { set { _log_errors = value; } get { return (_log_errors); } }
+
+        private bool _log_trade_errors = true;
+        [Description("Set this to true to enable logging of all order submission errors."), Category("Logging")]
+        public bool LogTradeErrorsEnabled { set { _log_trade_errors = value; } get { return (_log_trade_errors); } }
 
         private bool _log_oa_in = true;
         [Description("Set this to true to enable logging of Oanda Account Event Responses."), Category("Event Logging")]
@@ -345,13 +387,15 @@ namespace RightEdgeOandaPlugin
         public TimeSpan WeekendEndTime { set { _weekend_end_time = value; } get { return (_weekend_end_time); } }
     }
 
-    public enum IDType { Other, Stop, Target, Close };
+    public enum IDType { Other, Stop, Target, Close, Fail };
 
+    [Serializable]
     public class IDString
     {
 
         public IDString() { }
         public IDString(string s) { ID = s; }
+        public IDString(IDType t, int onum) { _type = t; _order_num = onum; _sub_num = 0; }
         public IDString(IDType t, int onum, int snum) { _type = t; _order_num = onum; _sub_num = snum; }
 
         private string typeString()
@@ -362,11 +406,13 @@ namespace RightEdgeOandaPlugin
                 case IDType.Close: return "close";
                 case IDType.Target: return "ptarget";
                 case IDType.Stop: return "pstop";
+                case IDType.Fail: return "fail";
                 default:
                     throw new OAPluginException("Unknown IDString type prefix '" + _type + "'.");
             }
         }
 
+        [XmlAttribute("ID")]
         public string ID
         {
             get { return (((_type == IDType.Other) ? "" : (_type==IDType.Other?"":(typeString()+"-"))) + _order_num.ToString() + (_sub_num == 0 ? "" : ("-" + _sub_num.ToString()))); }
@@ -417,10 +463,15 @@ namespace RightEdgeOandaPlugin
         }
 
         private IDType _type = IDType.Other;
+        [XmlIgnore]
         public IDType Type { set { _type = value; } get { return (_type); } }
+
         private int _order_num;
+        [XmlIgnore]
         public int Num { set { _order_num = value; } get { return (_order_num); } }
+
         private int _sub_num=0;
+        [XmlIgnore]
         public int SubNum { set { _sub_num = value; } get { return (_sub_num); } }
     }
     
@@ -554,10 +605,53 @@ namespace RightEdgeOandaPlugin
         }
     }
 
-    public class OrderBook : ContextBoundObject
+
+    [Serializable]
+    public class BrokerSymbolRecords : SerializableDictionary<string, BrokerPositionRecords>
     {
-        private SerializableDictionary<string, BrokerPositionRecords> _book = new SerializableDictionary<string, BrokerPositionRecords>();
-        public SerializableDictionary<string, BrokerPositionRecords> Book { set { _book = value; } get { return (_book); } }
+    }
+
+
+    [Serializable]
+    public class OrderBook
+    {
+        private SerializableDictionary<int, BrokerSymbolRecords> _accounts = new SerializableDictionary<int, BrokerSymbolRecords>();
+        public SerializableDictionary<int, BrokerSymbolRecords> Accounts { set { _accounts = value; } get { return (_accounts); } }
+
+        #region XML Serialization
+        private string _fname = "";
+        [XmlIgnore, Browsable(false)]
+        public string OrderLogFileName { set { _fname = value; } get { return (_fname); } }
+
+        public void saveSettings()
+        {
+            XmlSerializer mySerializer = new XmlSerializer(typeof(OrderBook));
+            StreamWriter myWriter = new StreamWriter(_fname);
+            mySerializer.Serialize(myWriter, this);
+            myWriter.Close();
+            myWriter.Dispose();
+        }
+
+        public static OrderBook loadSettings(string opt_fname)
+        {
+            XmlSerializer mySerializer = new XmlSerializer(typeof(OrderBook));
+            OrderBook opts;
+            FileStream myFileStream = null;
+            try
+            {
+                myFileStream = new FileStream(opt_fname, FileMode.Open);
+            }
+            catch (System.IO.IOException)
+            {
+                opts = new OrderBook();
+                opts._fname = opt_fname;
+                return (opts);
+            }
+            opts = (OrderBook)mySerializer.Deserialize(myFileStream);
+            opts._fname = opt_fname;
+            return (opts);
+        }
+        #endregion
     }
     #endregion
 
@@ -864,10 +958,16 @@ namespace RightEdgeOandaPlugin
 
     public class AccountResponder : fxAccountEvent
     {
-        public AccountResponder(OandAPlugin p) : base() { _parent = p; }
+        public AccountResponder(int act_id, OandAPlugin p) : base() { _account_id = act_id; _parent = p; }
 
         private OandAPlugin _parent=null;
         
+        private bool _active = true;
+        public bool Active { get { return (_active); } set { _active = value; } }
+        
+        private int _account_id = 0;
+        public int AccountID { get { return (_account_id); } }
+
         public override void handle(fxEventInfo ei, fxEventManager em)
         {
             _parent.handleAccountResponder(this,(fxAccountEventInfo)ei,em);
@@ -966,7 +1066,7 @@ namespace RightEdgeOandaPlugin
         public void captureREIn(BrokerOrder order)
         {
             if (!_log_re_in) { return; }
-            writeMessage("  RECEIVE RE ORDER : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.");
+            writeMessage("  RECEIVE RE ORDER : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Symbol='" + order.OrderSymbol.Name + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.");
         }
         public void captureREIn(string s)
         {
@@ -978,7 +1078,7 @@ namespace RightEdgeOandaPlugin
             if (!_log_re_out) { return; }
 
             writeMessage(s);
-            writeMessage("  SEND RE ORDER : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.");
+            writeMessage("  SEND RE ORDER : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Symbol='" + order.OrderSymbol.Name + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.");
 
             string n = "";
             if (fill != null)
@@ -990,26 +1090,26 @@ namespace RightEdgeOandaPlugin
             
         }
 
-        public void captureOAIn(Transaction trans)
+        public void captureOAIn(Transaction trans,int act_id)
         {
             if (!_log_oa_in) { return; }
-            writeMessage("  RECEIVE OA EVENT : " + trans.Timestamp + " {" + trans.Base + "/" + trans.Quote + "} " + trans.Description + " [id='" + trans.TransactionNumber + "' link='" + trans.Link + "'].");
+            writeMessage("  RECEIVE OA EVENT : " + trans.Timestamp + " {" + act_id + ":" + trans.Base + "/" + trans.Quote + "} " + trans.Description + " [id='" + trans.TransactionNumber + "' link='" + trans.Link + "'].");
         }
         public void captureOAOut(Account acct, LimitOrder lo, string s)
         {
             if (!_log_oa_out) { return; }
-            writeMessage("  SEND OA " + s + " LIMIT : Id='" + lo.Id + "' pair='" + lo.Pair + "' units='" + lo.Units + "' price='" + lo.Price + "'");
+            writeMessage("  SEND OA " + s + " LIMIT : Id='" + lo.Id + "' account='" + acct.AccountId + "' pair='" + lo.Pair + "' units='" + lo.Units + "' price='" + lo.Price + "'");
         }
         public void captureOAOut(Account acct, MarketOrder mo, string s)
         {
             if (!_log_oa_out) { return; }
-            writeMessage("  SEND OA " + s + " MARKET : Id='" + mo.Id + "' pair='" + mo.Pair + "' units='" + mo.Units + "'");
+            writeMessage("  SEND OA " + s + " MARKET : Id='" + mo.Id + "' account='" + acct.AccountId + "' pair='" + mo.Pair + "' units='" + mo.Units + "'");
         }
 
-        public void captureUnknownEvent(Transaction trans)
+        public void captureUnknownEvent(Transaction trans,int act_id)
         {
             if(!_log_no_match){return;}
-            writeMessage("  NOMATCH : " + trans.Timestamp + " {" + trans.Base + "/" + trans.Quote + "} " + trans.Description + " [id='" + trans.TransactionNumber + "' link='" + trans.Link + "'].");
+            writeMessage("  NOMATCH : " + trans.Timestamp + " {" + act_id + ":" + trans.Base + "/" + trans.Quote + "} " + trans.Description + " [id='" + trans.TransactionNumber + "' link='" + trans.Link + "'].");
         }
 
         public void captureDebug(string m)
@@ -1035,21 +1135,30 @@ namespace RightEdgeOandaPlugin
 
         private fxClient _fx_client = null;
         private OAPluginOptions _opts = null;
+        private ServiceConnectOptions _connected_as = ServiceConnectOptions.None;
 
         #region Logging & Debugging
         private static PluginLog _log = new PluginLog();
+        private static PluginLog _tick_log = new PluginLog();
+
         private void logOrderBookCounts(string s)
         {
             _log.captureDebug(s);
-            _log.captureDebug("  orderbook has " + _orderbook.Book.Count + " symbols");
-            foreach (string pos_key in _orderbook.Book.Keys)
+            _log.captureDebug("  orderbook has " + _orderbook.Accounts.Count + " accounts");
+            foreach (int act_id in _orderbook.Accounts.Keys)
             {
-                BrokerPositionRecords tbprl = _orderbook.Book[pos_key];
-                _log.captureDebug("    position list[" + pos_key + "] has " + tbprl.Count + " positions");
-                foreach (string bprl_key in tbprl.Keys)
+                BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
+                _log.captureDebug("  account '"+act_id+"' has " + bsr.Count + " accounts");
+
+                foreach (string pos_key in bsr.Keys)
                 {
-                    BrokerPositionRecord tbpr = tbprl[bprl_key];
-                    _log.captureDebug("      position record[" + bprl_key + "] has " + tbpr.TradeRecords.Count + " trades");
+                    BrokerPositionRecords tbprl = bsr[pos_key];
+                    _log.captureDebug("    position list[" + pos_key + "] has " + tbprl.Count + " positions");
+                    foreach (string bprl_key in tbprl.Keys)
+                    {
+                        BrokerPositionRecord tbpr = tbprl[bprl_key];
+                        _log.captureDebug("      position record[" + bprl_key + "] has " + tbpr.TradeRecords.Count + " trades");
+                    }
                 }
             }
             return;
@@ -1057,10 +1166,24 @@ namespace RightEdgeOandaPlugin
         private void captureDisconnect(SessionException oase,string title)
         {
             _log.captureException(oase);
-            _error_str = "Service disconnected.";
+            _error_str = "Service disconnected : " + oase.Message;
             _log.captureError(_error_str,title);
-            _fx_client = null;
+            disconnectCleanup();
+        }
+
+        private void disconnectCleanup()
+        {
+            if (_fx_client == null) { return; }
+
             //FIX ME <-- if/when RightEdge implements an event for connection state changes, the call to RE should go here...
+
+            _reconnect_account_ids.Clear();
+            foreach (int i in _account_responders.Keys)
+            {if (_account_responders[i].Active) { _reconnect_account_ids.Add(i); }}
+            _account_responders.Clear();
+
+            _fx_client.Destroy();//are these really needed??
+            _fx_client = null;
         }
         #endregion
 
@@ -1227,6 +1350,11 @@ namespace RightEdgeOandaPlugin
             _log.LogSendRE = _opts.LogRightEdgeSend;
 
             _log.LogUnknownEvents = _opts.LogUnknownEventsEnabled;
+
+            _tick_log.FileName = _opts.TickLogFileName;
+            _tick_log.LogDebug = _opts.LogTicksEnabled;
+
+            _orderbook.OrderLogFileName = _opts.OrderLogFileName;
             return r;
         }
 
@@ -1239,7 +1367,7 @@ namespace RightEdgeOandaPlugin
             try
             {
                 clearError();
-                _log.captureDebug("Connect() called.\n--------------------");
+                if (connectOptions == ServiceConnectOptions.Broker) { _log.captureDebug("Connect() called.\n--------------------"); }
                 if (_fx_client != null)
                 {
                     _error_str = "Connect called on existing fxclient";
@@ -1271,8 +1399,13 @@ namespace RightEdgeOandaPlugin
                     _fx_client = new fxTrade();
                     //...
                     _error_str = "contact oanda when ready to turn on live";
-                    _log.captureError(_error_str,  "Connect Error");
+                    _log.captureError(_error_str, "Connect Error");
                     return false;
+                }
+
+                if (_opts.LogFXClientEnabled)
+                {
+                    _fx_client.Logfile = _opts.FXClientLogFileName;
                 }
 
                 try
@@ -1280,6 +1413,22 @@ namespace RightEdgeOandaPlugin
                     _fx_client.WithRateThread = wrt;
                     _fx_client.WithKeepAliveThread = wka;
                     _fx_client.Login(_username, _password);
+
+                    if (connectOptions == ServiceConnectOptions.Broker && _reconnect_account_ids.Count > 0)
+                    {
+                        foreach (int aid in _reconnect_account_ids)
+                        {
+                            if (!addAccountResponder(aid))
+                            {
+                                if (_fx_client.IsLoggedIn) { _fx_client.Logout(); }
+                                _fx_client.Destroy();
+                                _fx_client = null;
+
+                                _reconnect_account_ids.Remove(aid);//remove aid from _handling list so it gets 'skipped' next time
+                                return false;
+                            }
+                        }
+                    }
                 }
                 catch (SessionException oase)
                 {
@@ -1290,9 +1439,13 @@ namespace RightEdgeOandaPlugin
                 {
                     _log.captureException(oae);
                     _error_str = "login failed : " + oae.Message;
-                    _log.captureError(_error_str,  "Connect Error");
+                    _log.captureError(_error_str, "Connect Error");
+                    if (_fx_client.IsLoggedIn) { _fx_client.Logout(); }
+                    _fx_client.Destroy();
+                    _fx_client = null;
                     return false;
                 }
+                _connected_as = connectOptions;
                 return true;
             }
             catch (Exception e)
@@ -1300,6 +1453,9 @@ namespace RightEdgeOandaPlugin
                 _log.captureException(e);
                 _error_str = "Unhandled exception : " + e.Message;
                 _log.captureError(_error_str,  "Connect Error");
+                if (_fx_client.IsLoggedIn) { _fx_client.Logout(); }
+                _fx_client.Destroy();
+                _fx_client = null;
                 return false;
             }
         }
@@ -1313,11 +1469,11 @@ namespace RightEdgeOandaPlugin
             try
             {
                 clearError();
-                //_log.captureDebug("Disconnect() called.");
+                if (_connected_as == ServiceConnectOptions.Broker) { _log.captureDebug("Disconnect() called."); }
                 if (_fx_client == null) { return true; }
                 if (_fx_client.IsLoggedIn)
                 {
-                    logOrderBookCounts("disconnecting");
+                    if (_connected_as == ServiceConnectOptions.Broker) { logOrderBookCounts("disconnecting"); }
                     try
                     {
                         _fx_client.Logout();
@@ -1336,6 +1492,10 @@ namespace RightEdgeOandaPlugin
                     }
                 }
                 _fx_client = null;
+                if (_connected_as == ServiceConnectOptions.Broker && !string.IsNullOrEmpty(_orderbook.OrderLogFileName))
+                {
+                    _orderbook.saveSettings();
+                }
                 return true;
             }
             catch (Exception e)
@@ -1486,11 +1646,7 @@ namespace RightEdgeOandaPlugin
         }
         private void fireTickEvent(Symbol sym, TickData tick)
         {
-            if (tick.time.Month == 1 && tick.time.Day == 1 && (tick.time.Year == 1 || tick.time.Year == 2001))
-            {
-                _log.captureDebug("BAD TICK : time='" + tick.time + "' price='" + tick.price + "' type='" + tick.tickType + "' size='" + tick.size + "'");
-                return;
-            }
+            _tick_log.captureDebug("TICK : time='" + tick.time + "' price='" + tick.price + "' type='" + tick.tickType + "' size='" + tick.size + "'");
             _gtd_event(sym, tick);
         }
 
@@ -1641,13 +1797,22 @@ namespace RightEdgeOandaPlugin
             return true;
         }
 
+        // This function is called before Connect to notify the broker
+        // of the list of orders that the system expects are pending,
+        // and the positions it expects are open.
         public void SetAccountState(BrokerAccountState accountState)
         {
-            // This function is called before Connect to notify the broker
-            // of the list of orders that the system expects are pending,
-            // and the positions it expects are open.
-            int x = 42;
-            x += 1;
+            _log.captureDebug("SetAccountState() called.");
+            if (string.IsNullOrEmpty(_orderbook.OrderLogFileName))
+            {//the plugin doesn't know anything about what might be in accountState
+                return;
+            }
+
+            OrderBook saved_orderbook = OrderBook.loadSettings(_orderbook.OrderLogFileName);
+
+            //merge the info in accountState and saved_orderbook into the active _orderbook
+
+            //load _handling_account_ids with account id numbers of relevant active accounts
         }
         #endregion
 
@@ -1669,37 +1834,41 @@ namespace RightEdgeOandaPlugin
                 catch (SessionException oase)
                 {
                     captureDisconnect(oase,"SubmitOrder Error");
+                    //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                     return false;
                 }
                 catch (Exception e)
                 {
                     _log.captureException(e);
-                    _error_str = "Error getting oanda account object : '" + e.Message + "'.";
-                    _log.captureError(_error_str,  "SubmitOrder Error");
+                    rejectOrder(order,"Error getting oanda account object : '" + e.Message + "'.","SubmitOrder Error");
                     return false;
                 }
 
-                if (!_accont_responders.ContainsKey(acct.AccountId))
+                if (!_account_responders.ContainsKey(acct.AccountId))
                 {
-                    AccountResponder ar = new AccountResponder(this);
+                    AccountResponder ar = new AccountResponder(acct.AccountId,this);
                     try
                     {
                         fxEventManager em = acct.GetEventManager();
-                        em.add(ar);
+                        if (!em.add(ar))
+                        {
+                            rejectOrder(order,"Unable to add account responder event hook for account id='" + acct.AccountId + "'.","addAccountResponder Error");
+                            return false;
+                        }
                     }
                     catch (SessionException oase)
                     {
                         captureDisconnect(oase,"SubmitOrder Error");
+                        //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                         return false;
                     }
                     catch (OAException oae)
                     {
                         _log.captureException(oae);
-                        _error_str = "Error getting oanda account event manager : '" + oae.Message + "'.";
-                        _log.captureError(_error_str,  "SubmitOrder Error");
+                        rejectOrder(order,"Error getting oanda account event manager : '" + oae.Message + "'.","SubmitOrder Error");
                         return false;
                     }
-                    _accont_responders[acct.AccountId] = ar;
+                    _account_responders.Add(acct.AccountId,ar);
                 }
 
                 TransactionType ott = order.TransactionType;
@@ -1720,8 +1889,7 @@ namespace RightEdgeOandaPlugin
                         }
                         else
                         {
-                            _error_str = "Unknown market order transaction type '" + ott + "'.";
-                            _log.captureError(_error_str,  "SubmitOrder Error");
+                            rejectOrder(order,"Unknown market order transaction type '" + ott + "'.","SubmitOrder Error");
                             return false;
                         }
                     case OrderType.Limit:
@@ -1739,8 +1907,7 @@ namespace RightEdgeOandaPlugin
                         }
                         else
                         {
-                            _error_str = "Unknown limit order transaction type '" + ott + "'.";
-                            _log.captureError(_error_str,  "SubmitOrder Error");
+                            rejectOrder(order,"Unknown limit order transaction type '" + ott + "'.","SubmitOrder Error");
                             return false;
                         }
                     case OrderType.Stop:
@@ -1752,21 +1919,18 @@ namespace RightEdgeOandaPlugin
                         }
                         else
                         {
-                            _error_str = "Unknown stop order transaction type '" + ott + "'.";
-                            _log.captureError(_error_str,  "SubmitOrder Error");
+                            rejectOrder(order,"Unknown stop order transaction type '" + ott + "'.","SubmitOrder Error");
                             return false;
                         }
                     default:
-                        _error_str = "Unknown order type '" + order.OrderType + "'.";
-                        _log.captureError(_error_str,  "SubmitOrder Error");
+                        rejectOrder(order,"Unknown order type '" + order.OrderType + "'.","SubmitOrder Error");
                         return false;
                 }
             }
             catch (Exception e)
             {
                 _log.captureException(e);
-                _error_str = "Unhandled exception : " + e.Message;
-                _log.captureError(_error_str,  "SubmitOrder Error");
+                rejectOrder(order,"Unhandled exception : " + e.Message,"SubmitOrder Error");
                 return false;
             }
         }
@@ -1779,59 +1943,63 @@ namespace RightEdgeOandaPlugin
                 clearError();
                 _log.captureDebug("CancelAllOrders() called.");
                 _log.captureREIn("CANCEL ALL");
-                foreach (string pos_key in _orderbook.Book.Keys)
+                foreach (int act_id in _orderbook.Accounts.Keys)
                 {
-                    foreach (string bpr_key in _orderbook.Book[pos_key].Keys)
+                    BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
+                    foreach (string pos_key in bsr.Keys)
                     {
-                        BrokerPositionRecord bpr = _orderbook.Book[pos_key][bpr_key];
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                        foreach (string bpr_key in bsr[pos_key].Keys)
                         {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-
-                            BrokerOrder bro = tr.openOrder.BrokerOrder;
-                            if (bro.OrderType != OrderType.Limit)
-                            {//FIX ME <-- is this right? should close all close ALL pending AND open??
-                                _log.captureDebug("CloseAllOrders skipping open order type '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
-                                continue;
-                            }
-
-                            Account acct;
-                            LimitOrder lo = new LimitOrder();
-                            int id_num = tr.OrderID.Num;
-                            switch (bro.OrderState)
+                            BrokerPositionRecord bpr = bsr[pos_key][bpr_key];
+                            foreach (IDString tr_key in bpr.TradeRecords.Keys)
                             {
-                                case BrokerOrderState.Submitted:
-                                    #region oanda close limit order
-                                    try
-                                    {
-                                        acct = OandAUtils.convertExchangeToAccount(_fx_client, bro.OrderSymbol.Exchange);
+                                TradeRecord tr = bpr.TradeRecords[tr_key];
 
-                                        if (!acct.GetOrderWithId(lo, id_num))
+                                BrokerOrder bro = tr.openOrder.BrokerOrder;
+                                if (bro.OrderType != OrderType.Limit)
+                                {//FIX ME <-- is this right? should close all close ALL pending AND open??
+                                    _log.captureDebug("CloseAllOrders skipping open order type '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
+                                    continue;
+                                }
+
+                                Account acct;
+                                LimitOrder lo = new LimitOrder();
+                                int id_num = tr.OrderID.Num;
+                                switch (bro.OrderState)
+                                {
+                                    case BrokerOrderState.Submitted:
+                                        #region oanda close limit order
+                                        try
                                         {
-                                            _error_str = "ERROR : Unable to locate the corresponding oanda broker order for id '" + id_num + "'.";
-                                            _log.captureError(_error_str,  "CancelOrder Error");
+                                            acct = OandAUtils.convertExchangeToAccount(_fx_client, bro.OrderSymbol.Exchange);
+
+                                            if (!acct.GetOrderWithId(lo, id_num))
+                                            {
+                                                _error_str = "ERROR : Unable to locate the corresponding oanda broker order for id '" + id_num + "'.";
+                                                _log.captureError(_error_str, "CancelOrder Error");
+                                                return false;
+                                            }
+                                            sendOAClose(acct, lo);
+                                        }
+                                        catch (SessionException oase)
+                                        {
+                                            captureDisconnect(oase, "CancelOrder Error");
                                             return false;
                                         }
-                                        sendOAClose(acct, lo);
-                                    }
-                                    catch (SessionException oase)
-                                    {
-                                        captureDisconnect(oase, "CancelOrder Error");
-                                        return false;
-                                    }
-                                    catch (OAException oae)
-                                    {
-                                        _log.captureException(oae);
-                                        _error_str = "Error closing oanda order : '" + oae.Message + "'.";
-                                        _log.captureError(_error_str,  "CancelOrder Error");
-                                        return false;
-                                    }
-                                    #endregion
-                                    break;
-                                //FIX ME - what other states need action here???
-                                default:
-                                    _log.captureDebug("CloseAllOrders skipping open order state '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
-                                    break;
+                                        catch (OAException oae)
+                                        {
+                                            _log.captureException(oae);
+                                            _error_str = "Error closing oanda order : '" + oae.Message + "'.";
+                                            _log.captureError(_error_str, "CancelOrder Error");
+                                            return false;
+                                        }
+                                        #endregion
+                                        break;
+                                    //FIX ME - what other states need action here???
+                                    default:
+                                        _log.captureDebug("CloseAllOrders skipping open order state '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
+                                        break;
+                                }
                             }
                         }
                     }
@@ -1862,152 +2030,156 @@ namespace RightEdgeOandaPlugin
                 if (oid.Type != IDType.Other) { is_pos_id = true; }
                 int id_num = oid.Num;
 
-                foreach (string pos_key in _orderbook.Book.Keys)
+                foreach (int act_id in _orderbook.Accounts.Keys)
                 {
-                    foreach (string pair in _orderbook.Book[pos_key].Keys)
+                    BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
+                    foreach (string pos_key in bsr.Keys)
                     {
-                        BrokerPositionRecord bpr = _orderbook.Book[pos_key][pair];
-
-                        #region handle position order cancel
-                        if (is_pos_id && bpr.ID == id_num.ToString())
+                        foreach (string pair in bsr[pos_key].Keys)
                         {
-                            int orders_sent = 0;
-                            BrokerOrder bro = null;
-                            switch (oid.Type)
-                            {//handle update to the stop/target order here...there were no trades/orders to adjust
-                                case IDType.Stop:
-                                    #region update position stop
-                                    bro = bpr.StopOrder.BrokerOrder;
-                                    bro.StopPrice = 0.0;
-                                    bro.OrderState = BrokerOrderState.PendingCancel;
-                                    fireOrderUpdated(bro, null, "cancelling pstop");
-                                    try
-                                    {
-                                        acct = OandAUtils.convertExchangeToAccount(_fx_client, bpr.StopOrder.BrokerOrder.OrderSymbol.Exchange);
-                                    }
-                                    catch (SessionException oase)
-                                    {
-                                        captureDisconnect(oase, "CancelOrder Error");
-                                        return false;
-                                    }
-                                    catch (OAException oae)
-                                    {
-                                        _log.captureException(oae);
-                                        _error_str = "Error getting account information from oanda api. " + oae.Message;
-                                        _log.captureError(_error_str,  "CancelOrder Error");
-                                        return false;
-                                    }
-                                    if (!submitStopOrders(bpr, bro, acct, out orders_sent)) { return false; }
-                                    if (orders_sent == 0)
-                                    {
-                                        bro.OrderState = BrokerOrderState.Cancelled;
-                                        fireOrderUpdated(bro, null, "pstop cancelled");
-                                        bpr.StopOrder = null;
-                                        removePositionRecord(_orderbook.Book[pos_key], bpr, pos_key);
-                                    }
-                                    return true;
-                                    #endregion
-                                case IDType.Target:
-                                    #region update position target
-                                    bro = bpr.TargetOrder.BrokerOrder;
-                                    bro.LimitPrice = 0.0;
-                                    bro.OrderState = BrokerOrderState.PendingCancel;
-                                    fireOrderUpdated(bro, null, "cancelling ptarget");
-                                    try
-                                    {
-                                        acct = OandAUtils.convertExchangeToAccount(_fx_client, bpr.TargetOrder.BrokerOrder.OrderSymbol.Exchange);
-                                    }
-                                    catch (SessionException oase)
-                                    {
-                                        captureDisconnect(oase, "CancelOrder Error");
-                                        return false;
-                                    }
-                                    catch (OAException oae)
-                                    {
-                                        _log.captureException(oae);
-                                        _error_str = "Error getting account information from oanda api. " + oae.Message;
-                                        _log.captureError(_error_str,  "CancelOrder Error");
-                                        return false;
-                                    }
-                                    if (!submitTargetOrders(bpr, bro, acct, out orders_sent)) { return false; }
-                                    if (orders_sent == 0)
-                                    {
-                                        bpr.TargetOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
-                                        fireOrderUpdated(bpr.TargetOrder.BrokerOrder, null, "cancel ptarget");
-                                        bpr.TargetOrder = null;
-                                        clearStopped(bpr);
-                                        removePositionRecord(_orderbook.Book[pos_key], bpr, pos_key);
-                                    }
-                                    return true;
-                                    #endregion
-                                default:
-                                    _error_str = "Unable to process order id prefix order ID '" + oid.ID + "'.";
-                                    _log.captureError(_error_str,  "CancelOrder Error");
-                                    return false;
-                            }
-                        }
-                        #endregion
+                            BrokerPositionRecord bpr = bsr[pos_key][pair];
 
-                        #region handle specific order cancel
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
-                        {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-                            BrokerOrder bro = tr.openOrder.BrokerOrder;
-                            if (tr.OrderID.Num == id_num)
-                            {//this one...
-                                #region verify specified order is an unfilled limit order
-                                if (bro.OrderType != OrderType.Limit)
-                                {
-                                    _error_str = "Canceling an unknown order type '" + bro.OrderType + "'.";
-                                    _log.captureError(_error_str,  "CancelOrder Error");
-                                    return false;
-                                }
-
-
-                                switch (bro.OrderState)
-                                {
-                                    case BrokerOrderState.Submitted:
-                                        break;
-                                    //FIX ME - what other states are ok here???
+                            #region handle position order cancel
+                            if (is_pos_id && bpr.ID == id_num.ToString())
+                            {
+                                int orders_sent = 0;
+                                BrokerOrder bro = null;
+                                switch (oid.Type)
+                                {//handle update to the stop/target order here...there were no trades/orders to adjust
+                                    case IDType.Stop:
+                                        #region update position stop
+                                        bro = bpr.StopOrder.BrokerOrder;
+                                        bro.StopPrice = 0.0;
+                                        bro.OrderState = BrokerOrderState.PendingCancel;
+                                        fireOrderUpdated(bro, null, "cancelling pstop");
+                                        try
+                                        {
+                                            acct = OandAUtils.convertExchangeToAccount(_fx_client, bpr.StopOrder.BrokerOrder.OrderSymbol.Exchange);
+                                        }
+                                        catch (SessionException oase)
+                                        {
+                                            captureDisconnect(oase, "CancelOrder Error");
+                                            return false;
+                                        }
+                                        catch (OAException oae)
+                                        {
+                                            _log.captureException(oae);
+                                            _error_str = "Error getting account information from oanda api. " + oae.Message;
+                                            _log.captureError(_error_str, "CancelOrder Error");
+                                            return false;
+                                        }
+                                        if (!submitStopOrders(bpr, bro, acct, out orders_sent)) { return false; }
+                                        if (orders_sent == 0)
+                                        {
+                                            bro.OrderState = BrokerOrderState.Cancelled;
+                                            fireOrderUpdated(bro, null, "pstop cancelled");
+                                            bpr.StopOrder = null;
+                                            removePositionRecord(act_id,bsr[pos_key], bpr, pos_key);
+                                        }
+                                        return true;
+                                        #endregion
+                                    case IDType.Target:
+                                        #region update position target
+                                        bro = bpr.TargetOrder.BrokerOrder;
+                                        bro.LimitPrice = 0.0;
+                                        bro.OrderState = BrokerOrderState.PendingCancel;
+                                        fireOrderUpdated(bro, null, "cancelling ptarget");
+                                        try
+                                        {
+                                            acct = OandAUtils.convertExchangeToAccount(_fx_client, bpr.TargetOrder.BrokerOrder.OrderSymbol.Exchange);
+                                        }
+                                        catch (SessionException oase)
+                                        {
+                                            captureDisconnect(oase, "CancelOrder Error");
+                                            return false;
+                                        }
+                                        catch (OAException oae)
+                                        {
+                                            _log.captureException(oae);
+                                            _error_str = "Error getting account information from oanda api. " + oae.Message;
+                                            _log.captureError(_error_str, "CancelOrder Error");
+                                            return false;
+                                        }
+                                        if (!submitTargetOrders(bpr, bro, acct, out orders_sent)) { return false; }
+                                        if (orders_sent == 0)
+                                        {
+                                            bpr.TargetOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
+                                            fireOrderUpdated(bpr.TargetOrder.BrokerOrder, null, "cancel ptarget");
+                                            bpr.TargetOrder = null;
+                                            clearStopped(bpr);
+                                            removePositionRecord(act_id,bsr[pos_key], bpr, pos_key);
+                                        }
+                                        return true;
+                                        #endregion
                                     default:
-                                        _error_str = "Canceling an order in an unknown state '" + bro.OrderState + "'.";
-                                        _log.captureError(_error_str,  "CancelOrder Error");
+                                        _error_str = "Unable to process order id prefix order ID '" + oid.ID + "'.";
+                                        _log.captureError(_error_str, "CancelOrder Error");
                                         return false;
                                 }
-                                #endregion
+                            }
+                            #endregion
 
-                                #region oanda close order
-                                LimitOrder lo = new LimitOrder();
-                                try
-                                {
-                                    acct = OandAUtils.convertExchangeToAccount(_fx_client, bro.OrderSymbol.Exchange);
-
-                                    if (!acct.GetOrderWithId(lo, id_num))
+                            #region handle specific order cancel
+                            foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                            {
+                                TradeRecord tr = bpr.TradeRecords[tr_key];
+                                BrokerOrder bro = tr.openOrder.BrokerOrder;
+                                if (tr.OrderID.Num == id_num)
+                                {//this one...
+                                    #region verify specified order is an unfilled limit order
+                                    if (bro.OrderType != OrderType.Limit)
                                     {
-                                        _error_str = "ERROR : Unable to locate the corresponding oanda broker order for id '" + id_num + "'.";
-                                        _log.captureError(_error_str,  "CancelOrder Error");
+                                        _error_str = "Canceling an unknown order type '" + bro.OrderType + "'.";
+                                        _log.captureError(_error_str, "CancelOrder Error");
                                         return false;
                                     }
-                                    sendOAClose(acct, lo);
-                                }
-                                catch (SessionException oase)
-                                {
-                                    captureDisconnect(oase, "CancelOrder Error");
-                                    return false;
-                                }
-                                catch (OAException oae)
-                                {
-                                    _log.captureException(oae);
-                                    _error_str = "Error closing oanda order : '" + oae.Message + "'.";
-                                    _log.captureError(_error_str,  "CancelOrder Error");
-                                    return false;
-                                }
-                                #endregion
 
-                                return true;
+
+                                    switch (bro.OrderState)
+                                    {
+                                        case BrokerOrderState.Submitted:
+                                            break;
+                                        //FIX ME - what other states are ok here???
+                                        default:
+                                            _error_str = "Canceling an order in an unknown state '" + bro.OrderState + "'.";
+                                            _log.captureError(_error_str, "CancelOrder Error");
+                                            return false;
+                                    }
+                                    #endregion
+
+                                    #region oanda close order
+                                    LimitOrder lo = new LimitOrder();
+                                    try
+                                    {
+                                        acct = OandAUtils.convertExchangeToAccount(_fx_client, bro.OrderSymbol.Exchange);
+
+                                        if (!acct.GetOrderWithId(lo, id_num))
+                                        {
+                                            _error_str = "ERROR : Unable to locate the corresponding oanda broker order for id '" + id_num + "'.";
+                                            _log.captureError(_error_str, "CancelOrder Error");
+                                            return false;
+                                        }
+                                        sendOAClose(acct, lo);
+                                    }
+                                    catch (SessionException oase)
+                                    {
+                                        captureDisconnect(oase, "CancelOrder Error");
+                                        return false;
+                                    }
+                                    catch (OAException oae)
+                                    {
+                                        _log.captureException(oae);
+                                        _error_str = "Error closing oanda order : '" + oae.Message + "'.";
+                                        _log.captureError(_error_str, "CancelOrder Error");
+                                        return false;
+                                    }
+                                    #endregion
+
+                                    return true;
+                                }
                             }
+                            #endregion
                         }
-                        #endregion
                     }
                 }
                 _error_str = "Unable to find an open order to cancel or order ID '" + id_num + "' never existed.";
@@ -2102,22 +2274,27 @@ namespace RightEdgeOandaPlugin
                 clearError();
                 _log.captureDebug("GetOpenOrder('" + id + "') called.");
 
-                foreach (string sym_key in _orderbook.Book.Keys)
+                foreach (int act_id in _orderbook.Accounts.Keys)
                 {
-                    BrokerPositionRecords bprl = _orderbook.Book[sym_key];
-                    foreach (string bpr_key in bprl.Keys)
-                    {
-                        BrokerPositionRecord bpr = bprl[bpr_key];
-                        if (bpr.StopOrder != null && bpr.StopOrder.BrokerOrder.OrderId == id)
-                        { return (bpr.StopOrder.BrokerOrder); }
-                        else if (bpr.TargetOrder != null && bpr.TargetOrder.BrokerOrder.OrderId == id)
-                        { return (bpr.TargetOrder.BrokerOrder); }
+                    BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
 
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                    foreach (string sym_key in bsr.Keys)
+                    {
+                        BrokerPositionRecords bprl = bsr[sym_key];
+                        foreach (string bpr_key in bprl.Keys)
                         {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-                            if (tr.openOrder.BrokerOrder.OrderId == id)
-                            { return (tr.openOrder.BrokerOrder); }
+                            BrokerPositionRecord bpr = bprl[bpr_key];
+                            if (bpr.StopOrder != null && bpr.StopOrder.BrokerOrder.OrderId == id)
+                            { return (bpr.StopOrder.BrokerOrder); }
+                            else if (bpr.TargetOrder != null && bpr.TargetOrder.BrokerOrder.OrderId == id)
+                            { return (bpr.TargetOrder.BrokerOrder); }
+
+                            foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                            {
+                                TradeRecord tr = bpr.TradeRecords[tr_key];
+                                if (tr.openOrder.BrokerOrder.OrderId == id)
+                                { return (tr.openOrder.BrokerOrder); }
+                            }
                         }
                     }
                 }
@@ -2142,18 +2319,23 @@ namespace RightEdgeOandaPlugin
                 clearError();
                 List<BrokerOrder> list = new List<BrokerOrder>();
 
-                foreach (string sym_key in _orderbook.Book.Keys)
+                foreach (int act_id in _orderbook.Accounts.Keys)
                 {
-                    BrokerPositionRecords bprl = _orderbook.Book[sym_key];
-                    foreach (string bpr_key in bprl.Keys)
+                    BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
+
+                    foreach (string sym_key in bsr.Keys)
                     {
-                        BrokerPositionRecord bpr = bprl[bpr_key];
-                        if (bpr.StopOrder != null) { list.Add(bpr.StopOrder.BrokerOrder.Clone()); }
-                        if (bpr.TargetOrder != null) { list.Add(bpr.TargetOrder.BrokerOrder.Clone()); }
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                        BrokerPositionRecords bprl = bsr[sym_key];
+                        foreach (string bpr_key in bprl.Keys)
                         {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-                            list.Add(tr.openOrder.BrokerOrder.Clone());
+                            BrokerPositionRecord bpr = bprl[bpr_key];
+                            if (bpr.StopOrder != null) { list.Add(bpr.StopOrder.BrokerOrder.Clone()); }
+                            if (bpr.TargetOrder != null) { list.Add(bpr.TargetOrder.BrokerOrder.Clone()); }
+                            foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                            {
+                                TradeRecord tr = bpr.TradeRecords[tr_key];
+                                list.Add(tr.openOrder.BrokerOrder.Clone());
+                            }
                         }
                     }
                 }
@@ -2171,9 +2353,18 @@ namespace RightEdgeOandaPlugin
         public int GetShares(Symbol symbol)
         {
             clearError();
-            if (!_orderbook.Book.ContainsKey(symbol.Name)) { return (0); }
-            BrokerPositionRecords bprl = _orderbook.Book[symbol.Name];
-            return bprl.getTotalSize();
+            
+            //FIX ME <-- look to a broker property for the account number here
+            foreach (int act_id in _orderbook.Accounts.Keys)
+            {//for now just use the first one returned in the has keys...there's probably only one anyway...
+                BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
+
+                if (!bsr.ContainsKey(symbol.Name)) { return (0); }
+                BrokerPositionRecords bprl = bsr[symbol.Name];
+                
+                return bprl.getTotalSize();
+            }
+            return 0;
         }
         #endregion
 
@@ -2206,9 +2397,10 @@ namespace RightEdgeOandaPlugin
 
         #region Broker backend members
 
-        //FIX ME <-- does there really need to be an instance of the responder for every account in use???
+        private List<int> _reconnect_account_ids = new List<int>();
+
         //key: account number
-        private Dictionary<int, AccountResponder> _accont_responders = new Dictionary<int, AccountResponder>();
+        private Dictionary<int, AccountResponder> _account_responders = new Dictionary<int, AccountResponder>();
 
         //key: symbol name (aka pair string)
         private OrderBook _orderbook = new OrderBook();
@@ -2225,16 +2417,23 @@ namespace RightEdgeOandaPlugin
             try
             {
                 _log.captureDebug("handleAccountResponder() called.");
-                _log.captureOAIn(trans);
+                _log.captureOAIn(trans,ar.AccountID);
 
                 #region get associated Broker Position Record List
-                string pair = trans.Base + "/" + trans.Quote;
-                if (!_orderbook.Book.ContainsKey(pair))
+                if (!_orderbook.Accounts.ContainsKey(ar.AccountID))
                 {
-                    RESendNoMatch(ar,aei,em);
+                    RESendNoMatch(ar, aei, em);
                     return;
                 }
-                BrokerPositionRecords bprl = _orderbook.Book[pair];
+                BrokerSymbolRecords bsr = _orderbook.Accounts[ar.AccountID];
+
+                string pair = trans.Base + "/" + trans.Quote;
+                if (!bsr.ContainsKey(pair))
+                {
+                    RESendNoMatch(ar, aei, em);
+                    return;
+                }
+                BrokerPositionRecords bprl = bsr[pair];
                 #endregion
 
                 string desc = trans.Description;
@@ -2324,7 +2523,7 @@ namespace RightEdgeOandaPlugin
                                 tr.openOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
                                 fireOrderUpdated(tr.openOrder.BrokerOrder, null, "handleAccountResponder() : cancel openOrder");
                                 if (pos.StopOrder == null && pos.TargetOrder == null && pos.CloseOrder == null) { tr.openOrder = null; }
-                                removeTradeRecord(bprl, pos, pair, tr);
+                                removeTradeRecord(ar.AccountID,bprl, pos, pair, tr);
                                 return;
                             }
                             else if (desc == "Close Trade")
@@ -2344,7 +2543,8 @@ namespace RightEdgeOandaPlugin
                                     nbo.PositionID = tr.openOrder.BrokerOrder.PositionID;
                                     nbo.Shares = trans.Units;
                                     nbo.SubmittedDate = DateTime.Now;
-                                    nbo.OrderId = "close-" + tr.openOrder.BrokerOrder.OrderId;
+                                    IDString ids = new IDString(IDType.Close, int.Parse(tr.openOrder.BrokerOrder.OrderId));
+                                    nbo.OrderId = ids.ID;
 
                                     tr.closeOrder = new OrderRecord(nbo);
 
@@ -2365,7 +2565,7 @@ namespace RightEdgeOandaPlugin
                                 tr.closeOrder = null;
 
                                 if (pos.StopOrder == null && pos.TargetOrder == null && tr.closeOrder == null) { tr.openOrder = null; }
-                                removeTradeRecord(bprl, pos, pair, tr);
+                                removeTradeRecord(ar.AccountID,bprl, pos, pair, tr);
                                 return;
                             }
                             else if (desc == "Close Position")
@@ -2385,7 +2585,8 @@ namespace RightEdgeOandaPlugin
                                     nbo.PositionID = tr.openOrder.BrokerOrder.PositionID;
                                     nbo.Shares = trans.Units;
                                     nbo.SubmittedDate = DateTime.Now;
-                                    nbo.OrderId = "close-" + tr.openOrder.BrokerOrder.OrderId;
+                                    IDString ids = new IDString(IDType.Close, int.Parse(tr.openOrder.BrokerOrder.OrderId));
+                                    nbo.OrderId = ids.ID;
                                     
                                     tr.closeOrder = new OrderRecord(nbo);
                                     
@@ -2407,7 +2608,7 @@ namespace RightEdgeOandaPlugin
                                 tr.closeOrder = null;
 
                                 if (pos.StopOrder == null && pos.TargetOrder == null && tr.closeOrder == null) { tr.openOrder = null; }
-                                removeTradeRecord(bprl, pos, pair, tr);
+                                removeTradeRecord(ar.AccountID,bprl, pos, pair, tr);
                                 return;
                             }
                             else if (desc == "Modify Trade")
@@ -2426,7 +2627,7 @@ namespace RightEdgeOandaPlugin
                                             pos.StopOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
                                             fireOrderUpdated(pos.StopOrder.BrokerOrder, null, "Cancel stop");
                                             pos.StopOrder = null;
-                                            removePositionRecord(bprl, pos, pos_key);
+                                            removePositionRecord(ar.AccountID, bprl, pos, pos_key);
                                         }
                                     }
                                     return;
@@ -2442,7 +2643,7 @@ namespace RightEdgeOandaPlugin
                                             pos.TargetOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
                                             fireOrderUpdated(pos.TargetOrder.BrokerOrder, null, "Cancel target");
                                             pos.TargetOrder = null;
-                                            removePositionRecord(bprl, pos, pos_key);
+                                            removePositionRecord(ar.AccountID, bprl, pos, pos_key);
                                         }
                                     }
                                     return;
@@ -2467,7 +2668,7 @@ namespace RightEdgeOandaPlugin
                                 {
                                     RESendFilledOrder(fill, pos.StopOrder.BrokerOrder, "stop loss");
                                     pos.StopOrder = null;
-                                    removePositionRecord(bprl, pos, pos_key);
+                                    removePositionRecord(ar.AccountID, bprl, pos, pos_key);
                                 }
                                 return;
                             }
@@ -2484,7 +2685,7 @@ namespace RightEdgeOandaPlugin
                                 {
                                     RESendFilledOrder(fill, pos.TargetOrder.BrokerOrder, "target");
                                     pos.TargetOrder = null;
-                                    removePositionRecord(bprl, pos, pos_key);
+                                    removePositionRecord(ar.AccountID, bprl, pos, pos_key);
                                 }
                                 return;
                             }
@@ -2533,43 +2734,29 @@ namespace RightEdgeOandaPlugin
             //this receives ALL ACCOUNT EVENTS!!! It doesn't matter where or how they originate.
             //If ANY connected client triggers an event, it will be sent to ALL clients
             Transaction trans = aei.Transaction;
-            _log.captureUnknownEvent(trans);
+            _log.captureUnknownEvent(trans,ar.AccountID);
             
         }
         #endregion
 
         #region backend record helpers
-        private BrokerPositionRecords getPositionList(string pair)
+        private BrokerPositionRecords getPositionList(int act_id,string pair)
         {
-            if (!_orderbook.Book.ContainsKey(pair))
+            if (!_orderbook.Accounts.ContainsKey(act_id))
             {
-                _error_str = "No position found for '" + pair + "'.";
-                _log.captureError(_error_str,"getPositionList Error");
+                _error_str = "No account found for '" + act_id + "'.";
+                _log.captureError(_error_str, "getPositionList Error");
                 throw new OAPluginException(_error_str);
             }
-            return (_orderbook.Book[pair]);
-        }
-
-        //not really needed??? limit orders are valid in any directions
-        //transaction events should fully resolve orders
-        //the same way oanda resolves them...
-        private bool checkNewPositionDirection(BrokerOrder order)
-        {
-            PositionType order_dir = (order.TransactionType == TransactionType.Short) ? PositionType.Short : PositionType.Long;
-            if (_orderbook.Book.ContainsKey(order.OrderSymbol.Name))
+            
+            BrokerSymbolRecords bsr=_orderbook.Accounts[act_id];
+            if (!bsr.ContainsKey(pair))
             {
-                BrokerPositionRecords bprl = _orderbook.Book[order.OrderSymbol.Name];
-                bool match_existing = false;
-                foreach (string bpr_key in bprl.Keys)
-                {
-                    if (bprl[bpr_key].ID == order.PositionID) { match_existing = true; break; }
-                }
-                if (bprl.Count>0 && !match_existing)
-                {//new position in an existing position list must match the position direction
-                    if (order_dir != bprl.Direction) {return false;}
-                }
+                _error_str = "No position found for '" + pair + "'.";
+                _log.captureError(_error_str, "getPositionList Error");
+                throw new OAPluginException(_error_str);
             }
-            return true;//null or empty position list, or safe oder
+            return (bsr[pair]);
         }
 
         private void clearStopped(BrokerPositionRecord bpr)
@@ -2597,19 +2784,67 @@ namespace RightEdgeOandaPlugin
             }
         }
 
-        private void removePositionRecord(BrokerPositionRecords bprl, BrokerPositionRecord bpr, string pair)
+        private void removePositionRecord(int act_id,BrokerPositionRecords bprl, BrokerPositionRecord bpr, string pair)
         {
             foreach (IDString tr_key in bpr.TradeRecords.Keys)
             {
-                removeTradeRecord(bprl, bpr, pair, bpr.TradeRecords[tr_key]);
+                removeTradeRecord(act_id,bprl, bpr, pair, bpr.TradeRecords[tr_key]);
             }
         }
 
-        private void addTradeRecord(BrokerOrder order)
+        private bool addAccountResponder(int aid)
+        {
+            if (_account_responders.ContainsKey(aid))
+            {
+                if (! _account_responders[aid].Active)
+                {
+                    _account_responders[aid].Active = true;
+                    return true;
+                }
+            }
+
+            Account acct = _fx_client.User.GetAccountWithId(aid);
+            if (acct == null)
+            {
+                _error_str = "Unable to locate Account record for account '" + aid + "'.";
+                _log.captureError(_error_str, "addAccountResponder Error");
+                return false;
+            }
+
+            fxEventManager em = acct.GetEventManager();
+            AccountResponder ar = new AccountResponder(aid, this);
+            if (!em.add(ar))
+            {
+                _error_str = "Unable to add account responder event hook for account id='" + aid + "'.";
+                _log.captureError(_error_str, "addAccountResponder Error");
+                return false;
+            }
+
+            _account_responders.Add(aid, ar);
+            return true;
+        }
+
+        private void addTradeRecord(int act_id,BrokerOrder order)
         {
             PositionType order_dir = (order.TransactionType == TransactionType.Short) ? PositionType.Short : PositionType.Long;
             BrokerPositionRecord p = null;
-            if (!_orderbook.Book.ContainsKey(order.OrderSymbol.Name))
+
+            if (!_orderbook.Accounts.ContainsKey(act_id))
+            {
+                _orderbook.Accounts[act_id] = new BrokerSymbolRecords();
+
+                if (!_account_responders.ContainsKey(act_id))
+                {//setup handler too if it does
+                    if (!addAccountResponder(act_id))
+                    {
+                        throw new OAPluginException(_error_str);
+                    }
+                }
+            }
+
+            BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
+
+            if (!_orderbook.Accounts[act_id].ContainsKey(order.OrderSymbol.Name))
             {
                 BrokerPositionRecords pl = new BrokerPositionRecords();
                 p = new BrokerPositionRecord();
@@ -2620,11 +2855,11 @@ namespace RightEdgeOandaPlugin
 
                 pl[p.ID] = p;
                 pl.Direction = order_dir;
-                _orderbook.Book[order.OrderSymbol.Name] = pl;
+                bsr[order.OrderSymbol.Name] = pl;
             }
             else
             {
-                BrokerPositionRecords bprl = _orderbook.Book[order.OrderSymbol.Name];
+                BrokerPositionRecords bprl = bsr[order.OrderSymbol.Name];
                 foreach (string bpr_key in bprl.Keys)
                 {
                     BrokerPositionRecord bpr = bprl[bpr_key];
@@ -2649,8 +2884,10 @@ namespace RightEdgeOandaPlugin
             tr.OrderID=new IDString(order.OrderId);
             p.TradeRecords[tr.OrderID] = tr;
         }
-        private void removeTradeRecord(BrokerPositionRecords bprl, BrokerPositionRecord bpr, string pair, TradeRecord tr)
+        private void removeTradeRecord(int act_id,BrokerPositionRecords bprl, BrokerPositionRecord bpr, string pair, TradeRecord tr)
         {
+            //logOrderBookCounts("removeTradeRecord - pre call counts");
+
             if (tr.openOrder == null && tr.closeOrder == null)
             {
                 if (!Monitor.TryEnter(bpr.TradeRecords, 1000))
@@ -2665,13 +2902,33 @@ namespace RightEdgeOandaPlugin
 
             if (bpr.TradeRecords.Count == 0 && bpr.StopOrder == null && bpr.TargetOrder == null && bpr.CloseOrder == null)
             { bprl.Remove(bpr.ID); }
+
+            BrokerSymbolRecords bsr = _orderbook.Accounts[act_id];
             if (bprl.Count == 0)
-            { _orderbook.Book.Remove(pair); }
+            { bsr.Remove(pair); }
+            if (bsr.Count == 0)
+            {
+                _account_responders[act_id].Active = false;
+
+                if (_reconnect_account_ids.Contains(act_id) && !_reconnect_account_ids.Remove(act_id))
+                {
+                    _error_str = "Unable to remove acount id = '" + act_id + "' from the reconnect list.";
+                    _log.captureError(_error_str, "removeTradeRecord error");
+                    throw new OAPluginException(_error_str);
+                }
+
+                if (!_orderbook.Accounts.Remove(act_id))
+                {
+                    _error_str = "Unable to remove acount id = '" + act_id + "' from the order book.";
+                    _log.captureError(_error_str, "removeTradeRecord error");
+                    throw new OAPluginException(_error_str);
+                }
+            }
 
             logOrderBookCounts("removeTradeRecord - post call counts");
             return;
         }
-        
+
         private void addFillrecord(string pair, Fill fill, int id)
         {
             if (!_fill_queue.ContainsKey(pair))
@@ -2716,24 +2973,32 @@ namespace RightEdgeOandaPlugin
             {
                 sendOAExecute(acct, lo);
             }
+            catch (OrderException oe)
+            {
+                invalidateOrder(order,oe.Message,"submitLimitOrder Error");
+                return false;
+            }
+            catch (AccountException ae)
+            {
+                invalidateOrder(order,ae.Message,"submitLimitOrder Error");
+                return false;
+            }
             catch (SessionException oase)
             {
-                captureDisconnect(oase, "submitLimitOrder error");
-                //FIX ME <-- order failed submission to the broker....
+                captureDisconnect(oase, "submitLimitOrder Error");
+                //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                 return false;
             }
             catch (OAException e)
             {
                 _log.captureException(e);
-                _error_str = "ERROR : Unable to submit limit order to oanda the servers : '" + e.Message + "'.";
-                _log.captureError(_error_str,  "submitLimitOrder error");
-                order.OrderState = BrokerOrderState.Rejected;//FIX ME <-- order failed submission to the broker....
+                rejectOrder(order,"Unable to submit limit order to oanda the servers : '" + e.Message + "'.","submitLimitOrder Error");
                 return false;
             }
             order.OrderState = BrokerOrderState.Submitted;
             order.OrderId = lo.Id.ToString();
 
-            addTradeRecord(order);
+            addTradeRecord(acct.AccountId, order);
             return true;
         }
         private bool submitMarketOrder(BrokerOrder order, Account acct)
@@ -2764,24 +3029,32 @@ namespace RightEdgeOandaPlugin
             {
                 sendOAExecute(acct, mo);
             }
+            catch (OrderException oe)
+            {
+                invalidateOrder(order, oe.Message, "submitMarketOrder Error");
+                return false;
+            }
+            catch (AccountException ae)
+            {
+                invalidateOrder(order, ae.Message, "submitMarketOrder Error");
+                return false;
+            }
             catch (SessionException oase)
             {
                 captureDisconnect(oase, "submitMarketOrder Error");
-                //FIX ME <-- order failed submission to the broker....
+                //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                 return false;
             }
             catch (OAException e)
             {
                 _log.captureException(e);
-                _error_str = "ERROR : unable to submit market order to oanda the servers : '" + e.Message + "'.";
-                _log.captureError(_error_str,  "submitMarketOrder Error");
-                order.OrderState = BrokerOrderState.Rejected;//FIX ME <-- order failed submission to the broker....
+                rejectOrder(order,"Unable to submit market order to oanda the servers : '" + e.Message + "'.","submitMarketOrder Error");
                 return false;
             }
             order.OrderState = BrokerOrderState.Submitted;
             order.OrderId = mo.Id.ToString();
 
-            addTradeRecord(order);
+            addTradeRecord(acct.AccountId, order);
             return true;
         }
         private bool submitCloseOrder(BrokerOrder order, Account acct)
@@ -2790,27 +3063,26 @@ namespace RightEdgeOandaPlugin
             BrokerPositionRecord cp;
             try
             {
-                bprl = getPositionList(order.OrderSymbol.Name);
+                bprl = getPositionList(acct.AccountId,order.OrderSymbol.Name);
                 cp = bprl.getPosition(order.PositionID);
             }
             catch (Exception e)
             {
                 _log.captureException(e);
-                _error_str = "ERROR : Unable to locate close order's position record : '" + e.Message + "'.";
-                _log.captureError(_error_str,  "submitCloseOrder Error");
+                rejectOrder(order,"Unable to locate close order's position record : '" + e.Message + "'.","submitCloseOrder Error");
                 return false;
             }
             if (!Monitor.TryEnter(cp.TradeRecords,1000))
             {
-                _error_str = "ERROR : unable to acquire trade records lock.";
-                _log.captureError(_error_str,  "submitCloseOrder Error");
+                rejectOrder(order,"Unable to acquire trade records lock.","submitCloseOrder Error");
                 return false;
             }
             try
             {
 
                 order.OrderState = BrokerOrderState.Submitted;
-                order.OrderId = "close-" + order.PositionID;
+                IDString cid=new IDString(IDType.Close,int.Parse(order.PositionID));
+                order.OrderId = cid.ID;
                 cp.CloseOrder = new OrderRecord(order);
 
                 foreach (IDString tr_key in cp.TradeRecords.Keys)
@@ -2827,8 +3099,7 @@ namespace RightEdgeOandaPlugin
                     else
                     {
                         Monitor.Exit(cp.TradeRecords);
-                        _error_str = "ERROR : Unable to process close order on open order type '" + ot + "'.";
-                        _log.captureError(_error_str,  "submitCloseOrder Error");
+                        rejectOrder(order,"Unable to process close order on open order type '" + ot + "'.","submitCloseOrder Error");
                         return false;
                     }
 
@@ -2837,30 +3108,40 @@ namespace RightEdgeOandaPlugin
                         if (!acct.GetTradeWithId(cmo, id_num))
                         {
                             Monitor.Exit(cp.TradeRecords);
-                            order.OrderState = BrokerOrderState.Invalid;//FIX ME 
-                            _error_str = "ERROR : Unable to locate trade id '" + id_num + "' for position '" + cp.ID + "' at oanda.";
-                            _log.captureError(_error_str,  "submitCloseOrder Error");
+                            rejectOrder(order,"Unable to locate trade id '" + id_num + "' for position '" + cp.ID + "' at oanda.", "submitCloseOrder Error");
                             return false;
                         }
                         sendOAClose(acct, cmo);
+                    }
+                    catch (OrderException oe)
+                    {
+                        Monitor.Exit(cp.TradeRecords);
+                        invalidateOrder(order,oe.Message,"submitCloseOrder Error");
+                        return false;
+                    }
+                    catch (AccountException ae)
+                    {
+                        Monitor.Exit(cp.TradeRecords);
+                        invalidateOrder(order,ae.Message,"submitCloseOrder Error");
+                        return false;
                     }
                     catch (SessionException oase)
                     {
                         Monitor.Exit(cp.TradeRecords);
                         captureDisconnect(oase, "submitCloseOrder Error");
+                        //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                         return false;
                     }
                     catch (OAException e)
                     {
                         Monitor.Exit(cp.TradeRecords);
                         _log.captureException(e);
-                        _error_str = "ERROR : Unable to close trade id '" + id_num + "' for position '" + cp.ID + "' at oanda : '" + e.Message + "'.";
-                        order.OrderState = BrokerOrderState.Rejected;//FIX ME
-                        _log.captureError(_error_str,  "submitCloseOrder error");
+                        rejectOrder(order, "Unable to close trade id '" + id_num + "' for position '" + cp.ID + "' at oanda : '" + e.Message + "'.", "submitCloseOrder Error");
                         return false;
                     }
                     BrokerOrder bro = new BrokerOrder();
-                    bro.OrderId = "close-" + cmo.Id;
+                    IDString id_s=new IDString(IDType.Close,cmo.Id);
+                    bro.OrderId = id_s.ID;
                     bro.SubmittedDate = DateTime.Now;
                     bro.Shares = (long)cmo.Units;
                     bro.PositionID = order.PositionID;
@@ -2872,7 +3153,9 @@ namespace RightEdgeOandaPlugin
             }
             catch (Exception e)
             {
-                throw new OAPluginException("", e);
+                _log.captureException(e);
+                rejectOrder(order, "Unhandled exception while closing orders. : " + e.Message, "submitCloseOrder Error");
+                return false;
             }
             finally { Monitor.Exit(cp.TradeRecords); }
             return true;
@@ -2886,14 +3169,13 @@ namespace RightEdgeOandaPlugin
 
             try
             {
-                bprl = getPositionList(oa_pair);
+                bprl = getPositionList(acct.AccountId,oa_pair);
                 bpr = bprl.getPosition(order.PositionID);
             }
             catch (Exception e)
             {
                 _log.captureException(e);
-                _error_str = "ERROR : Unable to locate stop order's position record : '" + e.Message + "'.";
-                _log.captureError(_error_str,  "submitPositionStopLossOrder Error");
+                rejectOrder(order,"Unable to locate stop order's position record : '" + e.Message + "'.","submitPositionStopLossOrder Error");
                 return false;
             }
 
@@ -2927,8 +3209,7 @@ namespace RightEdgeOandaPlugin
                     {
                         if (!acct.GetOrderWithId(lo, id_num))
                         {
-                            _error_str = "ERROR : Unable to locate oanda limit order for pending order '" + id_num + "'.";
-                            _log.captureError(_error_str,  "submitStopOrders Error");
+                            rejectOrder(order,"Unable to locate oanda limit order for pending order '" + id_num + "'.","submitStopOrders Error");
                             return false;
                         }
 
@@ -2937,16 +3218,26 @@ namespace RightEdgeOandaPlugin
 
                         sendOAModify(acct, lo);
                     }
+                    catch (OrderException oe)
+                    {
+                        invalidateOrder(order, oe.Message, "submitStopOrders Error");
+                        return false;
+                    }
+                    catch (AccountException ae)
+                    {
+                        invalidateOrder(order, ae.Message, "submitStopOrders Error");
+                        return false;
+                    }
                     catch (SessionException oase)
                     {
                         captureDisconnect(oase, "submitStopOrders Error");
+                        //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                         return false;
                     }
                     catch (OAException e)
                     {
                         _log.captureException(e);
-                        _error_str = "ERROR : Unable to modify Oanda limit order  : '" + e.Message + "'."; ;
-                        _log.captureError(_error_str,  "submitStopOrders Error");
+                        rejectOrder(order,"Unable to modify Oanda limit order  : '" + e.Message + "'.","submitStopOrders Error");
                         return false;
                     }
                     orders_sent++;
@@ -2960,8 +3251,7 @@ namespace RightEdgeOandaPlugin
                     {
                         if (!acct.GetTradeWithId(mo, id_num))
                         {
-                            _error_str = "ERROR : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.";
-                            _log.captureError(_error_str,  "submitStopOrders Error");
+                            rejectOrder(order,"Unable to locate oanda trade (market order) for filled order '" + id_num + "'.","submitStopOrders Error");
                             return false;
                         }
 
@@ -2970,26 +3260,34 @@ namespace RightEdgeOandaPlugin
 
                         sendOAModify(acct, mo);
                     }
+                    catch (OrderException oe)
+                    {
+                        invalidateOrder(order,oe.Message,"submitStopOrders Error");
+                        return false;
+                    }
+                    catch (AccountException ae)
+                    {
+                        invalidateOrder(order,ae.Message,"submitStopOrders Error");
+                        return false;
+                    }
                     catch (SessionException oase)
                     {
                         captureDisconnect(oase, "submitStopOrders Error");
+                        //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                         return false;
                     }
                     catch (OAException e)
                     {
                         _log.captureException(e);
-                        _error_str = "ERROR : Unable to modify Oanda market order : '" + e.Message + "'.";
-                        _log.captureError(_error_str,  "submitStopOrders Error");
+                        rejectOrder(order,"Unable to modify Oanda market order : '" + e.Message + "'.","submitStopOrders Error");
                         return false;
                     }
                     orders_sent++;
                     #endregion
                 }
                 else if (stop_price != 0.0)
-                {
-                    //unkown target order error
-                    _error_str = "ERROR : Unknown open order state for stop modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}";
-                    _log.captureError(_error_str,  "submitStopOrders Error");
+                {//unkown stop order error
+                    rejectOrder(order,"Unknown open order state for stop modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}","submitStopOrders Error");
                     return false;
                 }
                 //
@@ -3006,14 +3304,13 @@ namespace RightEdgeOandaPlugin
 
             try
             {
-                bprl = getPositionList(oa_pair);
+                bprl = getPositionList(acct.AccountId,oa_pair);
                 bpr = bprl.getPosition(order.PositionID);
             }
             catch (Exception e)
             {
                 _log.captureException(e);
-                _error_str = "ERROR : Unable to locate target order's position record : '" + e.Message + "'.";
-                _log.captureError(_error_str,  "submitPositionTargetProfitOrder Error");
+                rejectOrder(order,"Unable to locate target order's position record : '" + e.Message + "'.","submitPositionTargetProfitOrder Error");
                 return false;
             }
 
@@ -3047,8 +3344,7 @@ namespace RightEdgeOandaPlugin
                     {
                         if (!acct.GetOrderWithId(lo, id_num))
                         {
-                            _error_str = "ERROR : Unable to locate oanda limit order for pending order '" + id_num + "'.";
-                            _log.captureError(_error_str,  "submitTargetOrders Error");
+                            rejectOrder(order,"Unable to locate oanda limit order for pending order '" + id_num + "'.","submitTargetOrders Error");
                             return false;
                         }
 
@@ -3057,16 +3353,26 @@ namespace RightEdgeOandaPlugin
 
                         sendOAModify(acct, lo);
                     }
+                    catch (OrderException oe)
+                    {
+                        invalidateOrder(order,oe.Message,"submitTargetOrders Error");
+                        return false;
+                    }
+                    catch (AccountException ae)
+                    {
+                        invalidateOrder(order,ae.Message,"submitTargetOrders Error");
+                        return false;
+                    }
                     catch (SessionException oase)
                     {
                         captureDisconnect(oase, "submitTargetOrders Error");
+                        //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                         return false;
                     }
                     catch (OAException e)
                     {
                         _log.captureException(e);
-                        _error_str = "ERROR : Unable to modify Oanda limit order  : '" + e.Message + "'."; ;
-                        _log.captureError(_error_str,  "submitTargetOrders Error");
+                        rejectOrder(order,"Unable to modify Oanda limit order  : '" + e.Message + "'.","submitTargetOrders Error");
                         return false;
                     }
                     orders_sent++;
@@ -3080,8 +3386,7 @@ namespace RightEdgeOandaPlugin
                     {
                         if (!acct.GetTradeWithId(mo, id_num))
                         {
-                            _error_str = "ERROR : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.";
-                            _log.captureError(_error_str,  "submitTargetOrders Error");
+                            rejectOrder(order,"Unable to locate oanda trade (market order) for filled order '" + id_num + "'.","submitTargetOrders Error");
                             return false;
                         }
 
@@ -3090,26 +3395,34 @@ namespace RightEdgeOandaPlugin
 
                         sendOAModify(acct, mo);
                     }
+                    catch (OrderException oe)
+                    {
+                        invalidateOrder(order,oe.Message,"submitTargetOrders Error");
+                        return false;
+                    }
+                    catch (AccountException ae)
+                    {
+                        invalidateOrder(order,ae.Message,"submitTargetOrders Error");
+                        return false;
+                    }
                     catch (SessionException oase)
                     {
                         captureDisconnect(oase, "submitTargetOrders Error");
+                        //FIX ME <-- order failed submission to the broker....will RE retry on a disconnect, or should it be rejected?
                         return false;
                     }
                     catch (OAException e)
                     {
                         _log.captureException(e);
-                        _error_str = "Unable to modify Oanda market order : '" + e.Message + "'.";
-                        _log.captureError(_error_str,  "submitTargetOrders Error");
+                        rejectOrder(order,"Unable to modify Oanda market order : '" + e.Message + "'.","submitTargetOrders Error");
                         return false;
                     }
                     orders_sent++;
                     #endregion
                 }
                 else if (target_price != 0.0)
-                {
-                    //unkown target order error
-                    _error_str = "ERROR : Unknown open order state for target modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}";
-                    _log.captureError(_error_str,  "submitTargetOrders Error");
+                {//unkown target order error
+                    rejectOrder(order,"Unknown open order state for target modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}","submitTargetOrders Error");
                     return false;
                 }
                 //else target of 0.0 is a cancel
@@ -3124,38 +3437,100 @@ namespace RightEdgeOandaPlugin
         #region logged send to oanda wrappers
         private void sendOAClose(Account acct, LimitOrder lo)
         {
+            if (!_fx_client.IsLoggedIn) { throw new SessionException(); }
             _log.captureOAOut(acct, lo, "CLOSE");
             acct.Close(lo);
         }
         private void sendOAModify(Account acct, LimitOrder lo)
         {
+            if (!_fx_client.IsLoggedIn) { throw new SessionException(); }
             _log.captureOAOut(acct, lo, "MODIFY");
             acct.Modify(lo);
         }
         private void sendOAExecute(Account acct, LimitOrder lo)
         {
+            if (!_fx_client.IsLoggedIn) { throw new SessionException(); }
             _log.captureOAOut(acct, lo, "EXECUTE");
             acct.Execute(lo);
         }
 
         private void sendOAClose(Account acct, MarketOrder mo)
         {
+            if (!_fx_client.IsLoggedIn) { throw new SessionException(); }
             _log.captureOAOut(acct, mo, "CLOSE");
             acct.Close(mo);
         }
         private void sendOAModify(Account acct, MarketOrder mo)
         {
+            if (!_fx_client.IsLoggedIn) { throw new SessionException(); }
             _log.captureOAOut(acct, mo, "MODIFY");
             acct.Modify(mo);
         }
         private void sendOAExecute(Account acct, MarketOrder mo)
         {
+            if (!_fx_client.IsLoggedIn) { throw new SessionException(); }
             _log.captureOAOut(acct, mo, "EXECUTE");
             acct.Execute(mo);
         }
         #endregion
 
         #region logged send to right edge wrapper
+        private int _fail_ticket_num = 1;
+
+        private void invalidateOrder(BrokerOrder order, string s, string t)
+        {//order (or a plugin generated sub-order of order) was explicity invalidated by an oanda account or order exception
+
+            if (_opts.LogTradeErrorsEnabled)
+            {
+                string ostr = "ORDER INVALID : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Symbol='" + order.OrderSymbol.Name + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.";
+                _log.captureError(ostr, "Order Invalid");
+            }
+
+            if (string.IsNullOrEmpty(order.OrderId))
+            {//create one now...
+                IDString ids = new IDString(IDType.Fail, _fail_ticket_num++);
+                order.OrderId = ids.ID;
+            }
+            order.OrderState = BrokerOrderState.Invalid;
+            fireOrderUpdated(order, null, "invalid order");
+
+            if (!_fx_client.IsLoggedIn)
+            {
+                _error_str = "Disconnected : " + s;
+                disconnectCleanup();
+            }
+            else { _error_str = s; }
+
+            _log.captureError(_error_str, t);
+        }
+
+        private void rejectOrder(BrokerOrder order, string s, string t)
+        {//order (or a plugin generated sub-order of order) encountered a critical failure, not related to execution at oanda.
+
+            if (_opts.LogTradeErrorsEnabled)
+            {
+                string ostr = "ORDER REJECTED : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Symbol='" + order.OrderSymbol.Name + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.";
+                _log.captureError(ostr, "Order Rejected");
+            }
+
+            if (string.IsNullOrEmpty(order.OrderId))
+            {//create one now...
+                IDString ids = new IDString(IDType.Fail, _fail_ticket_num++);
+                order.OrderId = ids.ID;
+            }
+            order.OrderState = BrokerOrderState.Rejected;
+            fireOrderUpdated(order, null, "rejected order");
+
+            if(!_fx_client.IsLoggedIn)
+            {
+                _error_str = "Disconnected : " + s;
+                disconnectCleanup();
+            }
+            else{_error_str = s;}
+
+            _log.captureError(_error_str, t);
+        }
+
         private void fireOrderUpdated(BrokerOrder order, Fill fill, string s)
         {
             _log.captureREOut(order, fill, "SEND RE (" + s + ")");
