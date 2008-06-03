@@ -412,7 +412,7 @@ namespace RightEdgeOandaPlugin
             }
         }
 
-        [XmlAttribute("ID")]
+        [XmlAttribute("IDStringValue")]
         public string ID
         {
             get { return (((_type == IDType.Other) ? "" : (_type==IDType.Other?"":(typeString()+"-"))) + _order_num.ToString() + (_sub_num == 0 ? "" : ("-" + _sub_num.ToString()))); }
