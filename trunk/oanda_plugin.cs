@@ -2390,14 +2390,7 @@ namespace RightEdgeOandaPlugin
     {
         public override bool Equals(IDString x, IDString y)
         {
-            bool b=string.Equals(x.ID, y.ID);
-            
-            System.Diagnostics.Trace.WriteLine("x='" + x.ID + "' vs y='" + y.ID + "' => '" + b.ToString() + "'");
-
-            return b;
-
-            //if (x.ID == y.ID) { return true; }
-            //return false;
+            return string.Equals(x.ID, y.ID);
         }
         public override int GetHashCode(IDString obj)
         {
@@ -4751,8 +4744,8 @@ namespace RightEdgeOandaPlugin
     {
         public OandAPlugin()
         {
-            System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.TextWriterTraceListener("c:\\Storage\\src\\trace.log"));
-            System.Diagnostics.Trace.AutoFlush = true;
+            //System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.TextWriterTraceListener("c:\\Storage\\src\\trace.log"));
+            //System.Diagnostics.Trace.AutoFlush = true;
         }
         ~OandAPlugin() { }
 
