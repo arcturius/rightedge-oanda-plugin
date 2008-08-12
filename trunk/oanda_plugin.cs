@@ -2195,7 +2195,7 @@ namespace RightEdgeOandaPlugin
 
                     Thread.EndCriticalRegion();
 
-                    _parent.OrderBook.ClearAllFinalizedPositions(_log);
+                    _parent.OrderBook.ClearAllFinalizedPositions();
                 }
             }
             catch (ThreadInterruptedException)
@@ -2302,12 +2302,30 @@ namespace RightEdgeOandaPlugin
     public enum IDType { Other, Stop, Target, Close, Fail };
 
     [Serializable]
-    public class IDString
+    public class IDString : IEquatable<IDString>
     {
         public IDString() { }
         public IDString(string s) { ID = s; }
         public IDString(IDType t, int onum) { _type = t; _order_num = onum; _sub_num = 0; }
         public IDString(IDType t, int onum, int snum) { _type = t; _order_num = onum; _sub_num = snum; }
+
+        public override int GetHashCode()
+        {
+            return ID.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (System.Object.ReferenceEquals(this, obj)) { return true; }
+            if (! (obj is IDString)) { return false; }
+            return Equals((IDString)obj);
+        }
+        public bool Equals(IDString obj)
+        {
+            if (System.Object.ReferenceEquals(this, obj)) { return true; }
+            if (ID == obj.ID) { return true; }
+            return false;
+        }
 
         private string typeString()
         {
@@ -2386,17 +2404,6 @@ namespace RightEdgeOandaPlugin
         public int SubNum { set { _sub_num = value; } get { return (_sub_num); } }
     }
 
-    public class IDStringEquilityComparer : EqualityComparer<IDString>
-    {
-        public override bool Equals(IDString x, IDString y)
-        {
-            return string.Equals(x.ID, y.ID);
-        }
-        public override int GetHashCode(IDString obj)
-        {
-            return Default.GetHashCode(obj);
-        }
-    }
 
     [Serializable]
     public class ResponseRecord
@@ -2466,6 +2473,9 @@ namespace RightEdgeOandaPlugin
 
         private bool _is_right_edge_order = false;
         public bool IsRightEdgeOrder { set { _is_right_edge_order = value; } get { return (_is_right_edge_order); } }
+
+        private bool _cancel_to_close = false;
+        public bool CancelToClose { set { _cancel_to_close = value; } get { return (_cancel_to_close); } }
     }
 
     [Serializable]
@@ -2480,6 +2490,30 @@ namespace RightEdgeOandaPlugin
         private IDString _id = null;
         public IDString OrderID { set { _id = value; } get { return (_id); } }
 
+        public FunctionObjectResult<int> IDNumber()
+        {
+            FunctionObjectResult<int> res = new FunctionObjectResult<int>();
+            if (openOrder == null || openOrder.BrokerOrder==null)
+            {
+                res.setError("Unable to resolve id number, missing open order broker record.");
+                return res;
+            }
+            
+            OrderType ot = openOrder.BrokerOrder.OrderType;
+            int id_num;
+            if (ot == OrderType.Limit)
+            { id_num = string.IsNullOrEmpty(openOrder.FillId) ? 0 : int.Parse(openOrder.FillId); }
+            else if (ot == OrderType.Market)
+            { id_num = OrderID.Num; }
+            else
+            {
+                res.setError("Unable to resolve id number on open order type '" + ot + "'.");
+                return res;
+            }
+            res.ResultObject = id_num;
+            return res;
+        }
+
         private OpenOrderRecord _open_order = null;
         public OpenOrderRecord openOrder { set { _open_order = value; } get { return (_open_order); } }
 
@@ -2490,8 +2524,8 @@ namespace RightEdgeOandaPlugin
     [Serializable]
     public class TradeRecords : RightEdgeOandaPlugin.SerializableDictionary<IDString, TradeRecord>
     {//key is orderid of tr.openorder
-        public TradeRecords() : base(new IDStringEquilityComparer()) { }
-        public TradeRecords(IDString id) : base(new IDStringEquilityComparer()) { _id = id; }
+        public TradeRecords(){ }
+        public TradeRecords(IDString id){ _id = id; }
 
         private IDString _id;
         [XmlElement("IDValue")]
@@ -2672,8 +2706,8 @@ namespace RightEdgeOandaPlugin
         private PositionType _dir;
         public PositionType Direction { set { _dir = value; } get { return (_dir); } }
 
-        private SerializableDictionary<string, BrokerPositionRecord> _positions = new SerializableDictionary<string, BrokerPositionRecord>();
-        public SerializableDictionary<string, BrokerPositionRecord> Positions { set { _positions = value; } get { return (_positions); } }
+        private RightEdgeOandaPlugin.SerializableDictionary<string, BrokerPositionRecord> _positions = new RightEdgeOandaPlugin.SerializableDictionary<string, BrokerPositionRecord>();
+        public RightEdgeOandaPlugin.SerializableDictionary<string, BrokerPositionRecord> Positions { set { _positions = value; } get { return (_positions); } }
 
         public TransactionRecordResult TradeExists(string tr_id)
         {
@@ -2812,7 +2846,7 @@ namespace RightEdgeOandaPlugin
     }
 
     [Serializable]
-    public class BrokerSymbolRecords : SerializableDictionary<string, BrokerPositionRecords>
+    public class BrokerSymbolRecords : RightEdgeOandaPlugin.SerializableDictionary<string, BrokerPositionRecords>
     {
         public BrokerSymbolRecords(int id) { _id = id; }
         public BrokerSymbolRecords() { }
@@ -2842,10 +2876,10 @@ namespace RightEdgeOandaPlugin
         public PluginLog PluginLog { set { _log = value; } get { return (_log); } }
 
         //FIX ME - this really should be private only, but how to get it to serialize then??
-        private SerializableDictionary<int, BrokerSymbolRecords> _accounts = new SerializableDictionary<int, BrokerSymbolRecords>();
-        public SerializableDictionary<int, BrokerSymbolRecords> Accounts { set { _accounts = value; } get { return (_accounts); } }
+        private RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> _accounts = new RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords>();
+        public RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> Accounts { set { _accounts = value; } get { return (_accounts); } }
 
-        private SerializableDictionary<string, List<FillRecord>> _fill_queue = new SerializableDictionary<string, List<FillRecord>>();
+        private RightEdgeOandaPlugin.SerializableDictionary<string, List<FillRecord>> _fill_queue = new RightEdgeOandaPlugin.SerializableDictionary<string, List<FillRecord>>();
 
         private void addFillrecord(string pair, Fill fill, int id)
         {
@@ -2964,6 +2998,8 @@ namespace RightEdgeOandaPlugin
             return ret;
         }
 
+
+
         private PositionFetchResult fetchBrokerPositionRecord(int act_id, string sym_id, string pos_id)
         {
             PositionFetchResult ret = new PositionFetchResult();
@@ -2993,6 +3029,64 @@ namespace RightEdgeOandaPlugin
             ret.AccountId = act_id;
             return ret;
         }
+
+
+        private TransactionFetchResult fetchBrokerPositionRecordByBestFit(int act_id, BrokerOrder order)
+        {//this order is not able to be found by pos id...
+            TransactionFetchResult ret = new TransactionFetchResult();
+
+            if (order.TransactionType != TransactionType.Sell && order.TransactionType != TransactionType.Cover)
+            {
+                ret.setError("Only close requests can be matched by best fit.");
+                return ret;
+            }
+            
+            if (!_accounts.ContainsKey(act_id))
+            {
+                ret.setError("account record not found for account id '" + act_id + "'");
+                return ret;
+            }
+
+            BrokerSymbolRecords bsrl = _accounts[act_id];
+            string sym_id = order.OrderSymbol.Name;
+
+            if (!bsrl.ContainsKey(sym_id))
+            {
+                ret.setError("symbol record not found for symbol id '" + sym_id + "'");
+                return ret;
+            }
+
+            BrokerPositionRecords bprl = bsrl[sym_id];
+
+            //find the first open CancelToClose order and return that position
+            foreach (string bpr_key in bprl.Positions.Keys)
+            {
+                BrokerPositionRecord bpr = bprl.Positions[bpr_key];
+
+                foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                {
+                    TradeRecord tr = bpr.TradeRecords[tr_key];
+
+                    if (!tr.openOrder.CancelToClose) { continue; }
+
+                    //cancel to close open order...does it match the close request order?
+
+                    if (order.Shares == tr.openOrder.BrokerOrder.Shares)
+                    {//at this point the acct/symbol/shares all match...call it a fit...
+                        ret.ResultObject = bpr;
+                        ret.PositionId = tr.openOrder.BrokerOrder.PositionID;
+                        ret.TransactionTradeRecord = tr;
+                        ret.OrderId = tr.OrderID;
+                        ret.AccountId = act_id;
+                        return ret;
+                    }
+                }
+            }
+            ret.setError("No open order found which fits this close request.");
+            return ret;
+        }
+
+
 
         private FunctionResult pushTradeRecord(int act_id, BrokerOrder open_order, bool is_re)
         {
@@ -3036,6 +3130,7 @@ namespace RightEdgeOandaPlugin
             return fetch_bpr.ResultObject.pushTrade(open_order, is_re);
         }
 
+
         #region order submission
         public FXClientResult SubmitLimitOrder(BrokerOrder order, Account acct)
         {
@@ -3061,10 +3156,14 @@ namespace RightEdgeOandaPlugin
             }
             lo.Price = order.LimitPrice;
 
-            if (!order.GoodTillCanceled)
+            int h = 36;//FIX ME - how many hours should a limit order last???
+            if (h != 0)
             {
-                //lo.Duration = ;
+                DateTime duration = new DateTime(DateTime.UtcNow.Ticks);
+                duration = duration.AddHours(h);
+                lo.Duration = duration;
             }
+            //else - the default limit order duration is 1 hour
 
             res = _parent.fxClient.SendOAExecute(acct, lo);
             if (res.Error) { return res; }
@@ -3114,6 +3213,7 @@ namespace RightEdgeOandaPlugin
 
         public FXClientResult SubmitCloseOrder(BrokerOrder order, Account acct)
         {
+
             FXClientResult res = new FXClientResult();
             PositionFetchResult fetch_bpr = null;
             int orders_sent = 0;
@@ -3123,8 +3223,49 @@ namespace RightEdgeOandaPlugin
                 fetch_bpr = fetchBrokerPositionRecord(acct.AccountId, order.OrderSymbol.ToString(), order.PositionID);
                 if (fetch_bpr.Error)
                 {
-                    res.setError("Unable to locate close order's position record : '" + fetch_bpr.Message + "'.",FXClientResponseType.Rejected,false);
-                    return res;
+                    //since their is no orderID in the order and PositionID is not valid
+                    //have to do "best fit" matching.... ughhh...
+                    TransactionFetchResult tfetch_bpr = fetchBrokerPositionRecordByBestFit(acct.AccountId, order);
+                    if (tfetch_bpr.Error)
+                    {//still did not find it, return the original error and the best fit error
+                        res.setError("Unable to locate close order's position record : '" + fetch_bpr.Message + "'. " + tfetch_bpr.Message, FXClientResponseType.Rejected, false);
+                        return res;
+                    }
+
+                    //found the position by the trade id...
+                    BrokerPositionRecord tbpr = tfetch_bpr.ResultObject;
+                    TradeRecord tr = tfetch_bpr.TransactionTradeRecord;
+
+                    if (!tr.openOrder.CancelToClose)
+                    {//whoah nelly, this is a bad thing....
+                        res.setError("Found close order's trade record by order id, but it's not a 'cancel to close'", FXClientResponseType.Rejected, false);
+                        return res;
+                    }
+                    
+                    //remove the trade record from this position.
+                    if (!tbpr.TradeRecords.Remove(tr.OrderID))
+                    {
+                        res.setError("Unable to remove trade record from position.", FXClientResponseType.Rejected, false);
+                        return res;
+                    }
+
+                    //create a new position and add the trade record to the new position
+                    tr.openOrder.BrokerOrder.PositionID = order.PositionID;//set the new position ID
+                    FunctionResult fr = pushTradeRecord(acct.AccountId,tr.openOrder.BrokerOrder,true);
+                    if (fr.Error)
+                    {
+                        res.setError("Unable to push new position for cancel to close. " + fr.Message, FXClientResponseType.Rejected, false);
+                        return res;
+                    }
+
+                    //now fetch the new position and
+                    fetch_bpr = fetchBrokerPositionRecord(acct.AccountId, order.OrderSymbol.ToString(), order.PositionID);
+                    if (fetch_bpr.Error)
+                    {
+                        res.setError("Unable to fetch new position for cancel to close." + fetch_bpr.Message, FXClientResponseType.Rejected, false);
+                        return res;
+                    }
+                    //proceed with the close
                 }
 
                 cp = fetch_bpr.ResultObject;
@@ -3136,7 +3277,7 @@ namespace RightEdgeOandaPlugin
                 
                 if (cp.CloseOrder != null)
                 {
-                    res.setError("pre-existing close order id='" + cp.CloseOrder.BrokerOrder.OrderId + "'");
+                    res.setError("pre-existing close order id='" + cp.CloseOrder.BrokerOrder.OrderId + "'", FXClientResponseType.Rejected, false);
                     return res;
                 }
 
@@ -3149,19 +3290,15 @@ namespace RightEdgeOandaPlugin
                 {
                     TradeRecord tr = cp.TradeRecords[tr_key];
                     MarketOrder cmo = new MarketOrder();
-                    int id_num;
 
-                    OrderType ot = tr.openOrder.BrokerOrder.OrderType;
-                    if (ot == OrderType.Limit)
-                    { id_num = string.IsNullOrEmpty(tr.openOrder.FillId) ? 0 : int.Parse(tr.openOrder.FillId); }
-                    else if (ot == OrderType.Market)
-                    { id_num = tr.OrderID.Num; }
-                    else
+                    FunctionObjectResult<int> idres = tr.IDNumber();
+                    if (idres.Error)
                     {
-                        res.setError("Unable to process close order on open order type '" + ot + "'.",FXClientResponseType.Rejected,false);
+                        res.setError("Unable to process close order : " + idres.Message, FXClientResponseType.Rejected, false);
                         if (orders_sent == 0) { cp.CloseOrder = null; }
                         return res;
                     }
+                    int id_num = idres.ResultObject;
 
                     if (tr.openOrder.StopHit || tr.openOrder.TargetHit)
                     {//this order is already closed...
@@ -3255,6 +3392,7 @@ namespace RightEdgeOandaPlugin
             }
         }
 
+
         public FXClientResult SubmitPositionStopLossOrder(BrokerOrder order, Account acct)
         {
             FXClientResult res;
@@ -3309,7 +3447,15 @@ namespace RightEdgeOandaPlugin
             {
                 TradeRecord tr = bpr.TradeRecords[tr_key];
 
-                int id_num = tr.OrderID.Num;
+                FunctionObjectResult<int> idres = tr.IDNumber();
+                if (idres.Error)
+                {
+                    if (stop_added && orders_sent == 0) { bpr.TargetOrder = null; }
+                    res.setError("Unable to modify stop : " + idres.Message, FXClientResponseType.Rejected, false);
+                    res.OrdersSent = orders_sent;
+                    return res;
+                }
+                int id_num = idres.ResultObject;
 
                 if (tr.openOrder.BrokerOrder.OrderType == OrderType.Limit && tr.openOrder.BrokerOrder.OrderState == BrokerOrderState.Submitted)
                 {
@@ -3555,7 +3701,15 @@ namespace RightEdgeOandaPlugin
             {
                 TradeRecord tr = bpr.TradeRecords[tr_key];
 
-                int id_num = tr.OrderID.Num;
+                FunctionObjectResult<int> idres = tr.IDNumber();
+                if (idres.Error)
+                {
+                    if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
+                    res.setError("Unable to modify target : " + idres.Message, FXClientResponseType.Rejected, false);
+                    res.OrdersSent = orders_sent;
+                    return res;
+                }
+                int id_num = idres.ResultObject;
 
                 if (tr.openOrder.BrokerOrder.OrderType == OrderType.Limit && tr.openOrder.BrokerOrder.OrderState == BrokerOrderState.Submitted)
                 {
@@ -3842,6 +3996,13 @@ namespace RightEdgeOandaPlugin
                         bpr.StopOrder = null;
                         _parent.FireOrderUpdated(bro, null, "pstop cancelled");
                         if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
+
+                        FunctionResult fr=ClearAllFinalizedPositions();
+                        if (fr.Error)
+                        {
+                            res.setError(fr.Message, FXClientResponseType.Rejected, false);
+                            return res;
+                        }
                     }
                     return res;
                     ////////////////////
@@ -3916,6 +4077,13 @@ namespace RightEdgeOandaPlugin
                         bpr.TargetOrder = null;
                         _parent.FireOrderUpdated(bro, null, "cancel ptarget");
                         if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
+
+                        FunctionResult fr=ClearAllFinalizedPositions();
+                        if (fr.Error)
+                        {
+                            res.setError(fr.Message, FXClientResponseType.Rejected, false);
+                            return res;
+                        }
                     }
                     return res;
                     ////////////////////
@@ -3937,15 +4105,9 @@ namespace RightEdgeOandaPlugin
             }
             BrokerPositionRecord bpr = fetch_bpr.ResultObject;
 
-            
             if (! bpr.TradeRecords.ContainsKey(oid) )
-            {//FIX ME - this code always hits when the PositionManager recursion overrun happens....
-
-                //trying a warning instead of an error...
-                _log.captureDebug("Unable to locate trade record for specific order cancel. : oid='" + oid.ID + "'");
-                _log.captureDebug("very strange since fetch returned a valid position for this trade id....");
-
-                //res.setError("Unable to locate trade record for specific order cancel. : oid='" + oid.ID + "'", FXClientResponseType.Rejected, false);
+            {
+                res.setError("Unable to locate trade record for specific order cancel. : oid='" + oid.ID + "'", FXClientResponseType.Rejected, false);
                 res.OrderMissing = true;
                 return res;
             }
@@ -3954,6 +4116,13 @@ namespace RightEdgeOandaPlugin
             BrokerOrder bro = tr.openOrder.BrokerOrder;
 
             #region verify specified order is an unfilled limit order
+            if (bro.OrderType == OrderType.Market)
+            {//market orders can not be canceled....
+                //generally this is the result of a "post-hit" secondary order fill
+                res.setError("Attempt to cancel a market order", FXClientResponseType.Rejected, false);
+                tr.openOrder.CancelToClose = true;//expect RE to send a close on the order later (possibly under a different pos id)
+                return res;//fail the cancel so RE knows the order is still open (which it is...)
+            }
             if (bro.OrderType != OrderType.Limit)
             {
                 res.setError("Canceling an unknown order type '" + bro.OrderType + "'.", FXClientResponseType.Rejected, false);
@@ -4026,11 +4195,10 @@ namespace RightEdgeOandaPlugin
                         FXClientObjectResult<Fill> fillres = _parent.fxClient.GenerateFillFromTransaction(trans, response.BaseCurrency);
                         if (fillres.Error)
                         {
-                            result.FXClientResponse = fillres.FXClientResponse;
-                            result.setError(fillres.Message);
+                            result.setError(fillres.Message,fillres.FXClientResponse,fillres.Disconnected);
                             return result;
                         }
-                        addFillrecord(fetch_bpr.SymbolName, fillres.ResultObject, trans.TransactionNumber);
+                        addFillrecord(trans.Base + "/" + trans.Quote, fillres.ResultObject, trans.TransactionNumber);
                         return result;//wait for the "Order Fulfilled" event to finalize the original limit order
                     }
 
@@ -4119,7 +4287,7 @@ namespace RightEdgeOandaPlugin
                     {
                         #region cancel order
                         tr.openOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
-                        _parent.FireOrderUpdated(tr.openOrder.BrokerOrder, null, "handleAccountTransaction() : cancel openOrder");
+                        _parent.FireOrderUpdated(tr.openOrder.BrokerOrder, null, "order canceled");
 
                         FXClientResult fres=finalizePositionExit(pos,"cancel order");
                         if (fres.Error)
@@ -4375,9 +4543,23 @@ namespace RightEdgeOandaPlugin
                         return result;
                         #endregion
                     }
+                    else if (desc == "Order Expired")
+                    {
+                        #region order expired
+                        tr.openOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
+                        _parent.FireOrderUpdated(tr.openOrder.BrokerOrder, null, "order expired");
+
+                        FXClientResult fres = finalizePositionExit(pos, "order expired");
+                        if (fres.Error)
+                        {
+                            result.setError(fres.Message, fres.FXClientResponse, fres.Disconnected);
+                        }
+                        return result;
+                        #endregion
+                    }
                     else
                     {
-                        result.setError("Uknown linked match transaction (num='" + trans.TransactionNumber + "',link='" + trans.Link + "') description. : '" + desc + "'");
+                        result.setError("Unknown link matched transaction description (num='" + trans.TransactionNumber + "',link='" + trans.Link + "'). : '" + desc + "'");
                         return result;
                     }
                     #endregion
@@ -4395,10 +4577,6 @@ namespace RightEdgeOandaPlugin
         #region position finalizers
         private FXClientResult finalizePositionExit(BrokerPositionRecord pos, string s)
         {
-            //FIX ME - this needs to maintain a collection object which contains the finalization results...
-            //because RE sometimes tries to cancel orders that have been filled due to event timing issues
-
-
             _log.captureDebug("attempting to finalize position on " + s);
 
             if (pos.CloseOrder != null)
@@ -4467,7 +4645,7 @@ namespace RightEdgeOandaPlugin
             return new FXClientResult();
         }
 
-        public FunctionResult ClearAllFinalizedPositions(PluginLog log)
+        public FunctionResult ClearAllFinalizedPositions()
         {
             FunctionResult res = new FunctionResult();
 
@@ -5500,16 +5678,16 @@ namespace RightEdgeOandaPlugin
                 _log.captureError(_error_str, "CancelAllOrders Error");
                 return false;//this should re-trigger the disconnect logic in RE
             }
-
-
             
             try
             {
                 FXClientResult res = _orderbook.CancelAllOrders();
-                
-
-                
-                //check res...and set error_str if needed
+                if (res.Error)
+                {
+                    setResponseErrorMessage(res);
+                    _log.captureError(_error_str, "CancelAllOrders Error");
+                    return false;
+                }
                 return true;
             }
             catch (Exception e)
@@ -5567,6 +5745,14 @@ namespace RightEdgeOandaPlugin
             clearError();
             _log.captureDebug("GetBuyingPower() called.");
 
+            if (!_fx_client.IsInit)//the fx_client is gone, there was a disconnection event...
+            {//sometimes RE acts again before checking the error from the last action
+                _error_str = "Disconnected : Broker not connected!";
+                _log.captureError(_error_str, "GetBuyingPower Error");
+                return -1.0;//this should re-trigger the disconnect logic in RE
+            }
+
+
             try
             {
                 FXClientObjectResult<double> res = _orderbook.GetMarginAvailable();
@@ -5592,6 +5778,13 @@ namespace RightEdgeOandaPlugin
         {
             clearError();
             _log.captureDebug("GetMargin() called.");
+            
+            if (!_fx_client.IsInit)//the fx_client is gone, there was a disconnection event...
+            {//sometimes RE acts again before checking the error from the last action
+                _error_str = "Disconnected : Broker not connected!";
+                _log.captureError(_error_str, "GetMargin Error");
+                return -1.0;//this should re-trigger the disconnect logic in RE
+            }
 
             try
             {
