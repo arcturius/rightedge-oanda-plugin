@@ -1,0 +1,1 @@
+#summary RightEdge is a trading system development and execution platform (and is a closed source, commercial product).
