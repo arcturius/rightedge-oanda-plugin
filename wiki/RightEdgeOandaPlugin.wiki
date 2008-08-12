@@ -1,0 +1,1 @@
+#summary A RightEdge plugin capable of connecting to an API enabled Oanda trading account.
