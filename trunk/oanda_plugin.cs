@@ -844,6 +844,8 @@ namespace RightEdgeOandaPlugin
         }
     }
 
+    public enum DataFilterType { None, WeekendTimeFrame, PriceActivity };
+
     [Serializable]
     public class OAPluginOptions
     {
@@ -854,7 +856,7 @@ namespace RightEdgeOandaPlugin
         {
             OAPluginOptions rsrc = src;
             if (src == null) { rsrc = new OAPluginOptions(); }
-            _do_weekend_filter = rsrc._do_weekend_filter;
+            _data_filter_type = rsrc._data_filter_type;
             _use_bounds = rsrc._use_bounds;
             _log_errors = rsrc._log_errors;
             _log_trade_errors = rsrc._log_trade_errors;
@@ -910,8 +912,8 @@ namespace RightEdgeOandaPlugin
                 if (settings.ContainsKey("LogExceptionsEnabled")) { _log_exceptions = bool.Parse(settings["LogExceptionsEnabled"]); }
                 if (settings.ContainsKey("LogDebugEnabled")) { _log_debug = bool.Parse(settings["LogDebugEnabled"]); }
                 if (settings.ContainsKey("ShowErrorsEnabled")) { _show_errors = bool.Parse(settings["ShowErrorsEnabled"]); }
-                
-                if (settings.ContainsKey("WeekendFilterEnabled")) { _do_weekend_filter = bool.Parse(settings["WeekendFilterEnabled"]); }
+
+                if (settings.ContainsKey("DataFilterType")) { _data_filter_type = (DataFilterType)Enum.Parse(typeof(DataFilterType), settings["DataFilterType"]); }
                 if (settings.ContainsKey("WeekendStartDay")) { _weekend_start_day = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), settings["WeekendStartDay"]); }
                 if (settings.ContainsKey("WeekendEndDay")) { _weekend_end_day = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), settings["WeekendEndDay"]); }
                 if (settings.ContainsKey("WeekendStartTime"))     { _weekend_start_time = TimeSpan.Parse(settings["WeekendStartTime"]); }
@@ -946,7 +948,7 @@ namespace RightEdgeOandaPlugin
             settings["LogExceptionsEnabled"] = _log_exceptions.ToString();
             settings["LogDebugEnabled"] = _log_debug.ToString();
             settings["ShowErrorsEnabled"] = _show_errors.ToString();
-            settings["WeekendFilterEnabled"] = _do_weekend_filter.ToString();
+            settings["DataFilterType"] = _data_filter_type.ToString();
             settings["WeekendStartDay"] = _weekend_start_day.ToString();
             settings["WeekendEndDay"] = _weekend_end_day.ToString();
             settings["WeekendStartTime"] = _weekend_start_time.ToString();
@@ -1068,9 +1070,9 @@ namespace RightEdgeOandaPlugin
         [Description("Set this to true to enable logging of event details for unknown Oanda Account Responses."), Category("Event Logging")]
         public bool LogUnknownEventsEnabled { set { _log_unknown_events = value; } get { return (_log_unknown_events); } }
 
-        private bool _do_weekend_filter = true;
-        [Description("Set this to true to enable the weekend data filter on historic data downloads."), Category("Data Filter")]
-        public bool WeekendFilterEnabled { set { _do_weekend_filter = value; } get { return (_do_weekend_filter); } }
+        private DataFilterType _data_filter_type = DataFilterType.WeekendTimeFrame;
+        [Description("There are 3 filtering options for historic data downloads. Set this to 'WeekendTimeFrame' to enable the filter using the specified Weekend date/time range. Set it to 'PriceActivity' to filter bars with no price movement. Set it to 'None' to disable all filtering."), Category("Data Filter")]
+        public DataFilterType DataFilterType { set { _data_filter_type = value; } get { return (_data_filter_type); } }
 
         private DayOfWeek _weekend_start_day = DayOfWeek.Friday;
         [Description("The day of the week the weekend data starts."), Category("Data Filter")]
@@ -5248,7 +5250,6 @@ namespace RightEdgeOandaPlugin
         // bars are supported and that is returned in the list.
         public List<int> GetAvailableFrequencies()
         {
-            clearError();
             return OandAUtils.supportedIntervals();
         }
 
@@ -5292,11 +5293,12 @@ namespace RightEdgeOandaPlugin
                     return null;
                 }
 
-                bool do_weekend_filter = _opts.WeekendFilterEnabled;
+                DataFilterType filter_type = _opts.DataFilterType;
                 DayOfWeek weekend_start_day = _opts.WeekendStartDay;
                 DayOfWeek weekend_end_day = _opts.WeekendEndDay;
                 TimeSpan weekend_start_time = _opts.WeekendStartTime;
                 TimeSpan weekend_end_time = _opts.WeekendEndTime;
+                bool drop_bar = true;
 
                 System.Collections.IEnumerator iEnum = hal.ResultObject.GetEnumerator();
                 while (iEnum.MoveNext())
@@ -5306,17 +5308,34 @@ namespace RightEdgeOandaPlugin
 
                     if (hpts < startDate) { continue; }
 
-                    if (do_weekend_filter && (hpts.DayOfWeek >= weekend_start_day || hpts.DayOfWeek <= weekend_end_day))
+                    drop_bar = true;
+                    switch (filter_type)
                     {
-                        bool drop_bar = true;
-                        if (hpts.DayOfWeek == weekend_start_day && hpts.TimeOfDay < weekend_start_time)
-                        { drop_bar = false; }
+                        case DataFilterType.WeekendTimeFrame:
+                            if (hpts.DayOfWeek >= weekend_start_day || hpts.DayOfWeek <= weekend_end_day)
+                            {
+                                if (hpts.DayOfWeek == weekend_start_day && hpts.TimeOfDay < weekend_start_time)
+                                { drop_bar = false; }
 
-                        if (hpts.DayOfWeek == weekend_end_day && hpts.TimeOfDay >= weekend_end_time)
-                        { drop_bar = false; }
-
-                        if (drop_bar) { continue; }
+                                if (hpts.DayOfWeek == weekend_end_day && hpts.TimeOfDay >= weekend_end_time)
+                                { drop_bar = false; }
+                            }
+                            break;
+                        case DataFilterType.PriceActivity:
+                            CandlePoint cp = hp.GetCandlePoint();
+                            double n=cp.Open;
+                            if(n==cp.Close && n==cp.Min && n==cp.Max)
+                            { drop_bar = false; }
+                            break;
+                        case DataFilterType.None:
+                            drop_bar = false;
+                            break;
+                        default:
+                            _error_str = "Unknown Data Filter Type setting '" + filter_type + "'.";
+                            _log.captureError(_error_str, "RetrieveData Error");
+                            return null;
                     }
+                    if (drop_bar) { continue; }
 
                     if (hpts > endDate) { break; }
 
