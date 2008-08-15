@@ -5298,7 +5298,7 @@ namespace RightEdgeOandaPlugin
                 DayOfWeek weekend_end_day = _opts.WeekendEndDay;
                 TimeSpan weekend_start_time = _opts.WeekendStartTime;
                 TimeSpan weekend_end_time = _opts.WeekendEndTime;
-                bool drop_bar = true;
+                bool drop_bar;
 
                 System.Collections.IEnumerator iEnum = hal.ResultObject.GetEnumerator();
                 while (iEnum.MoveNext())
@@ -5308,12 +5308,14 @@ namespace RightEdgeOandaPlugin
 
                     if (hpts < startDate) { continue; }
 
-                    drop_bar = true;
+                    drop_bar = false;
                     switch (filter_type)
                     {
                         case DataFilterType.WeekendTimeFrame:
                             if (hpts.DayOfWeek >= weekend_start_day || hpts.DayOfWeek <= weekend_end_day)
                             {
+                                drop_bar = true;
+
                                 if (hpts.DayOfWeek == weekend_start_day && hpts.TimeOfDay < weekend_start_time)
                                 { drop_bar = false; }
 
@@ -5325,10 +5327,9 @@ namespace RightEdgeOandaPlugin
                             CandlePoint cp = hp.GetCandlePoint();
                             double n=cp.Open;
                             if(n==cp.Close && n==cp.Min && n==cp.Max)
-                            { drop_bar = false; }
+                            { drop_bar = true; }
                             break;
                         case DataFilterType.None:
-                            drop_bar = false;
                             break;
                         default:
                             _error_str = "Unknown Data Filter Type setting '" + filter_type + "'.";
