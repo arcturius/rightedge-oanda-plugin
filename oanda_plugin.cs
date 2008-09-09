@@ -3,6 +3,7 @@ using System.Runtime.Remoting.Contexts;
 using System.Drawing.Design;
 using System.ComponentModel;
 using System.IO;
+using System.Globalization;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -52,6 +53,27 @@ IMPROVEMENTS:
 
 namespace RightEdgeOandaPlugin
 {
+    public class NamelessConverter : ExpandableObjectConverter
+        {
+            public override object ConvertTo(
+                     ITypeDescriptorContext context,
+                     CultureInfo culture,
+                     object value,
+                     Type destinationType)
+            {
+                if (destinationType == typeof(string))
+                {
+                    return "";
+                }
+
+                return base.ConvertTo(
+                    context,
+                    culture,
+                    value,
+                    destinationType);
+            }
+        }
+
     #region XML Dictionary Serialization
     /// http://weblogs.asp.net/pwelter34/archive/2006/05/03/444961.aspx
     /// Author : Paul Welter (pwelter34)
@@ -698,21 +720,6 @@ namespace RightEdgeOandaPlugin
         private bool _log_debug = true;
         public bool LogDebug { set { _log_debug = value; } get { return (_log_debug); } }
 
-        private bool _log_oa_out = true;
-        public bool LogSendOA { set { _log_oa_out = value; } get { return (_log_oa_out); } }
-
-        private bool _log_oa_in = true;
-        public bool LogReceiveOA { set { _log_oa_in = value; } get { return (_log_oa_in); } }
-
-        private bool _log_re_out = true;
-        public bool LogSendRE { set { _log_re_out = value; } get { return (_log_re_out); } }
-
-        private bool _log_re_in = true;
-        public bool LogReceiveRE { set { _log_re_in = value; } get { return (_log_re_in); } }
-
-        private bool _log_no_match = true;
-        public bool LogUnknownEvents { set { _log_no_match = value; } get { return (_log_no_match); } }
-
         private bool _show_errors = true;
         public bool ShowErrors { set { _show_errors = value; } get { return (_show_errors); } }
 
@@ -722,32 +729,54 @@ namespace RightEdgeOandaPlugin
         public string FileName { get { return (_fname); } set { closeLog(); _fname = value; } }
 
         private FileStream _fs = null;
+        private static object _lock = new object();
 
         private int _monitor_timeout = 1000;
 
         public void closeLog()
         {
-            if (_fs != null) { _fs.Close(); _fs = null; }
+            if (!Monitor.TryEnter(_lock, _monitor_timeout))
+            {
+                    throw new OAPluginException("Unable to acquire lock on log file stream.");
+            }
+            try
+            {
+                if (_fs == null) { return; }
+
+                _fs.Close();
+                _fs = null;
+            }
+            finally { Monitor.Pulse(_lock); Monitor.Exit(_lock); }
         }
         public void openLog()
+        { openLog(true); }
+
+        private void openLog(bool do_lock)
         {
-            if (_fs != null) { throw new OAPluginException("Log already open."); }
-            _fs = new FileStream(_fname, FileMode.Append, FileAccess.Write);
+            if (do_lock && !Monitor.TryEnter(_lock, _monitor_timeout))
+            {
+                    throw new OAPluginException("Unable to acquire lock on log file stream.");
+            }
+            try
+            {
+                if (_fs != null) { return; }
+                _fs = new FileStream(_fname, FileMode.Append, FileAccess.Write);
+            }
+            finally { if (do_lock) { Monitor.Pulse(_lock); Monitor.Exit(_lock); } }
         }
-        private void writeMessage(string message)
+        protected void writeMessage(string message)
         {
-            if (!IsOpen) { openLog(); }
-
-            string msg = DateTime.Now.ToString() + " [" + Thread.CurrentThread.ManagedThreadId + "] : " + message + "\n";
-            byte[] msg_bytes = new UTF8Encoding(true).GetBytes(msg);
-
-            if (!Monitor.TryEnter(_fs, _monitor_timeout))
+            if (!Monitor.TryEnter(_lock, _monitor_timeout))
             {
                 throw new OAPluginException("Unable to acquire lock on log file stream.");
             }
 
             try
             {
+                if (!IsOpen) { openLog(false); }
+                string msg = DateTime.Now.ToString() + " [" + Thread.CurrentThread.ManagedThreadId + "] : " + message + "\n";
+                byte[] msg_bytes = new UTF8Encoding(true).GetBytes(msg);
+
                 _fs.Write(msg_bytes, 0, msg_bytes.Length);
                 _fs.Flush();
             }
@@ -755,7 +784,7 @@ namespace RightEdgeOandaPlugin
             {
                 throw new OAPluginException("", e);
             }
-            finally { Monitor.Pulse(_fs); Monitor.Exit(_fs); }
+            finally { Monitor.Pulse(_lock); Monitor.Exit(_lock); }
         }
 
         public void captureException(Exception e)
@@ -773,6 +802,38 @@ namespace RightEdgeOandaPlugin
             }
             writeMessage(m);
         }
+        public void captureDebug(string m)
+        {
+            if (!_log_debug) { return; }
+            writeMessage(m);
+        }
+
+        public void captureError(string message, string title)
+        {
+            if (_log_errors) { writeMessage("ERROR : " + message); }
+            if (_show_errors)
+            {
+                MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
+    public class BrokerLog : PluginLog
+    {
+        private bool _log_oa_out = true;
+        public bool LogSendOA { set { _log_oa_out = value; } get { return (_log_oa_out); } }
+
+        private bool _log_oa_in = true;
+        public bool LogReceiveOA { set { _log_oa_in = value; } get { return (_log_oa_in); } }
+
+        private bool _log_re_out = true;
+        public bool LogSendRE { set { _log_re_out = value; } get { return (_log_re_out); } }
+
+        private bool _log_re_in = true;
+        public bool LogReceiveRE { set { _log_re_in = value; } get { return (_log_re_in); } }
+
+        private bool _log_no_match = true;
+        public bool LogUnknownEvents { set { _log_no_match = value; } get { return (_log_no_match); } }
 
         public void captureREIn(BrokerOrder order)
         {
@@ -827,24 +888,60 @@ namespace RightEdgeOandaPlugin
         {
             writeMessage(s + " : " + trans.Timestamp + " {" + act_id + ":" + trans.Base + "/" + trans.Quote + "} " + trans.Description + " [id='" + trans.TransactionNumber + "' link='" + trans.Link + "'].");
         }
-
-        public void captureDebug(string m)
-        {
-            if (!_log_debug) { return; }
-            writeMessage(m);
-        }
-
-        public void captureError(string message, string title)
-        {
-            if (_log_errors) { writeMessage("ERROR : " + message); }
-            if (_show_errors)
-            {
-                MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
     }
 
+    public class TickLog : PluginLog
+    {
+        private bool _log_ticks = true;
+        public bool LogTicks { set { _log_ticks = value; } get { return (_log_ticks); } }
+
+        public void captureTick(Symbol sym,TickData tick)
+        {
+            if (!_log_ticks) { return; }
+            writeMessage("TICK : symbol='" + sym.Name + "' time='" + tick.time + "' price='" + tick.price + "' type='" + tick.tickType + "' size='" + tick.size + "'");
+        }
+    }
+    
     public enum DataFilterType { None, WeekendTimeFrame, PriceActivity };
+
+    [Serializable]
+    [TypeConverter(typeof(NamelessConverter))]
+    public class OAPluginLogOptions
+    {
+        public OAPluginLogOptions() { }
+        public OAPluginLogOptions(string fn) { _log_fname = fn; }
+
+        public void Copy(OAPluginLogOptions src)
+        {
+            OAPluginLogOptions rsrc = src;
+            if (src == null) { rsrc = new OAPluginLogOptions(); }
+
+            _log_debug = rsrc._log_debug;
+            _log_errors = rsrc._log_errors;
+            _log_exceptions = rsrc._log_exceptions;
+            _log_fname = rsrc._log_fname;
+            _show_errors = rsrc._show_errors;
+        }
+        private string _log_fname = "C:\\log.log";
+        [Description("Set this to the desired log file name."), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        public string LogFileName { set { _log_fname = value; } get { return (_log_fname); } }
+
+        private bool _log_errors = true;
+        [Description("Set this to true to enable logging of errors.")]
+        public bool LogErrors { set { _log_errors = value; } get { return (_log_errors); } }
+
+        private bool _show_errors = false;
+        [Description("Set this to true to enable a message box dialog on errors.")]
+        public bool ShowErrors { set { _show_errors = value; } get { return (_show_errors); } }
+
+        private bool _log_exceptions = true;
+        [Description("Set this to true to enable logging of exception details.")]
+        public bool LogExceptions { set { _log_exceptions = value; } get { return (_log_exceptions); } }
+
+        private bool _log_debug = true;
+        [Description("Set this to true to enable debug messages.")]
+        public bool LogDebug { set { _log_debug = value; } get { return (_log_debug); } }
+    }
 
     [Serializable]
     public class OAPluginOptions
@@ -856,29 +953,31 @@ namespace RightEdgeOandaPlugin
         {
             OAPluginOptions rsrc = src;
             if (src == null) { rsrc = new OAPluginOptions(); }
-            _data_filter_type = rsrc._data_filter_type;
-            _use_bounds = rsrc._use_bounds;
-            _log_errors = rsrc._log_errors;
-            _log_trade_errors = rsrc._log_trade_errors;
+            _opt_fname = rsrc._opt_fname;
 
+            _tick_log_opt.Copy(rsrc._tick_log_opt);
+            _hist_log_opt.Copy(rsrc._hist_log_opt);
+            _broker_log_opt.Copy(rsrc._broker_log_opt);
+            
+            _log_trade_errors = rsrc._log_trade_errors;
+            
             _log_re_in = rsrc._log_re_in;
             _log_re_out = rsrc._log_re_out;
             _log_oa_in = rsrc._log_oa_in;
             _log_oa_out = rsrc._log_oa_out;
+            _log_unknown_events = rsrc._log_unknown_events;
 
             _order_log_fname = rsrc._order_log_fname;
-
+            
             _log_fxclient = rsrc._log_fxclient;
             _fxclient_log_fname = rsrc._fxclient_log_fname;
-
-            _log_debug = rsrc._log_debug;
-            _log_fname = rsrc._log_fname;
+            
             _log_ticks = rsrc._log_ticks;
-            _tick_log_fname = rsrc._tick_log_fname;
-            _opt_fname = rsrc._opt_fname;
-            _show_errors = rsrc._show_errors;
-            _log_unknown_events = rsrc._log_unknown_events;
+            
             _use_game = rsrc._use_game;
+            _use_bounds = rsrc._use_bounds;
+
+            _data_filter_type = rsrc._data_filter_type;
             _weekend_end_day = rsrc._weekend_end_day;
             _weekend_end_time = rsrc._weekend_end_time;
             _weekend_start_day = rsrc._weekend_start_day;
@@ -890,28 +989,42 @@ namespace RightEdgeOandaPlugin
         {
             try
             {
-                if (settings.ContainsKey("LogFileName")) { _log_fname = settings["LogFileName"]; }
+                if (settings.ContainsKey("Broker.LogFileName")) { _broker_log_opt.LogFileName = settings["Broker.LogFileName"]; }
+                if (settings.ContainsKey("Broker.LogErrorsEnabled")) { _broker_log_opt.LogErrors = bool.Parse(settings["Broker.LogErrorsEnabled"]); }
+                if (settings.ContainsKey("Broker.LogExceptionsEnabled")) { _broker_log_opt.LogExceptions = bool.Parse(settings["Broker.LogExceptionsEnabled"]); }
+                if (settings.ContainsKey("Broker.LogDebugEnabled")) { _broker_log_opt.LogDebug = bool.Parse(settings["Broker.LogDebugEnabled"]); }
+                if (settings.ContainsKey("Broker.ShowErrorsEnabled")) { _broker_log_opt.ShowErrors = bool.Parse(settings["Broker.ShowErrorsEnabled"]); }
+
+                if (settings.ContainsKey("Tick.LogFileName")) { _tick_log_opt.LogFileName = settings["Tick.LogFileName"]; }
+                if (settings.ContainsKey("Tick.LogErrorsEnabled")) { _tick_log_opt.LogErrors = bool.Parse(settings["Tick.LogErrorsEnabled"]); }
+                if (settings.ContainsKey("Tick.LogExceptionsEnabled")) { _tick_log_opt.LogExceptions = bool.Parse(settings["Tick.LogExceptionsEnabled"]); }
+                if (settings.ContainsKey("Tick.LogDebugEnabled")) { _tick_log_opt.LogDebug = bool.Parse(settings["Tick.LogDebugEnabled"]); }
+                if (settings.ContainsKey("Tick.ShowErrorsEnabled")) { _tick_log_opt.ShowErrors = bool.Parse(settings["Tick.ShowErrorsEnabled"]); }
+                
+                if (settings.ContainsKey("History.LogFileName")) { _hist_log_opt.LogFileName = settings["History.LogFileName"]; }
+                if (settings.ContainsKey("History.LogErrorsEnabled")) { _hist_log_opt.LogErrors = bool.Parse(settings["History.LogErrorsEnabled"]); }
+                if (settings.ContainsKey("History.LogExceptionsEnabled")) { _hist_log_opt.LogExceptions = bool.Parse(settings["History.LogExceptionsEnabled"]); }
+                if (settings.ContainsKey("History.LogDebugEnabled")) { _hist_log_opt.LogDebug = bool.Parse(settings["History.LogDebugEnabled"]); }
+                if (settings.ContainsKey("History.ShowErrorsEnabled")) { _hist_log_opt.ShowErrors = bool.Parse(settings["History.ShowErrorsEnabled"]); }
+
                 if (settings.ContainsKey("OrderLogFileName")) { _order_log_fname = settings["OrderLogFileName"]; }
-                if (settings.ContainsKey("TickLogFileName")) { _tick_log_fname = settings["TickLogFileName"]; }
+                
                 if (settings.ContainsKey("FXClientLogFileName")) { _fxclient_log_fname = settings["FXClientLogFileName"]; }
                 if (settings.ContainsKey("LogFXClientEnabled")) { _log_fxclient = bool.Parse(settings["LogFXClientEnabled"]); }
+                
                 if (settings.ContainsKey("LogTicksEnabled")) { _log_ticks = bool.Parse(settings["LogTicksEnabled"]); }
+                
                 if (settings.ContainsKey("GameServerEnabled"))    { _use_game = bool.Parse(settings["GameServerEnabled"]); }
                 if (settings.ContainsKey("BoundsEnabled")) { _use_bounds = bool.Parse(settings["BoundsEnabled"]); }
 
-                if (settings.ContainsKey("LogErrorsEnabled")) { _log_errors = bool.Parse(settings["LogErrorsEnabled"]); }
                 if (settings.ContainsKey("LogTradeErrorsEnabled")) { _log_trade_errors = bool.Parse(settings["LogTradeErrorsEnabled"]); }
 
                 if (settings.ContainsKey("LogOandaSend")) { _log_oa_out = bool.Parse(settings["LogOandaSend"]); }
                 if (settings.ContainsKey("LogOandaReceive")) { _log_oa_in = bool.Parse(settings["LogOandaReceive"]); }
                 if (settings.ContainsKey("LogRightEdgeSend")) { _log_re_out = bool.Parse(settings["LogRightEdgeSend"]); }
                 if (settings.ContainsKey("LogRightEdgeReceive")) { _log_re_in = bool.Parse(settings["LogRightEdgeReceive"]); }
-
                 if (settings.ContainsKey("LogUnknownEventsEnabled")) { _log_unknown_events = bool.Parse(settings["LogUnknownEventsEnabled"]); }
 
-                if (settings.ContainsKey("LogExceptionsEnabled")) { _log_exceptions = bool.Parse(settings["LogExceptionsEnabled"]); }
-                if (settings.ContainsKey("LogDebugEnabled")) { _log_debug = bool.Parse(settings["LogDebugEnabled"]); }
-                if (settings.ContainsKey("ShowErrorsEnabled")) { _show_errors = bool.Parse(settings["ShowErrorsEnabled"]); }
 
                 if (settings.ContainsKey("DataFilterType")) { _data_filter_type = (DataFilterType)Enum.Parse(typeof(DataFilterType), settings["DataFilterType"]); }
                 if (settings.ContainsKey("WeekendStartDay")) { _weekend_start_day = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), settings["WeekendStartDay"]); }
@@ -927,27 +1040,42 @@ namespace RightEdgeOandaPlugin
         }
         public bool saveRESettings(ref RightEdge.Common.SerializableDictionary<string, string> settings)
         {
-            settings["LogFileName"] = _log_fname;
+            settings["Broker.LogFileName"] = _broker_log_opt.LogFileName;
+            settings["Broker.LogErrorsEnabled"] = _broker_log_opt.LogErrors.ToString();
+            settings["Broker.LogExceptionsEnabled"] = _broker_log_opt.LogExceptions.ToString();
+            settings["Broker.LogDebugEnabled"] = _broker_log_opt.LogDebug.ToString();
+            settings["Broker.ShowErrorsEnabled"] = _broker_log_opt.ShowErrors.ToString();
+
+            settings["Tick.LogFileName"] = _tick_log_opt.LogFileName;
+            settings["Tick.LogErrorsEnabled"] = _tick_log_opt.LogErrors.ToString();
+            settings["Tick.LogExceptionsEnabled"] = _tick_log_opt.LogExceptions.ToString();
+            settings["Tick.LogDebugEnabled"] = _tick_log_opt.LogDebug.ToString();
+            settings["Tick.ShowErrorsEnabled"] = _tick_log_opt.ShowErrors.ToString();
+
+            settings["History.LogFileName"] = _hist_log_opt.LogFileName;
+            settings["History.LogErrorsEnabled"] = _hist_log_opt.LogErrors.ToString();
+            settings["History.LogExceptionsEnabled"] = _hist_log_opt.LogExceptions.ToString();
+            settings["History.LogDebugEnabled"] = _hist_log_opt.LogDebug.ToString();
+            settings["History.ShowErrorsEnabled"] = _hist_log_opt.ShowErrors.ToString();
+
             settings["OrderLogFileName"] = _order_log_fname;
-            settings["TickLogFileName"] = _tick_log_fname;
+            
             settings["FXClientLogFileName"] = _fxclient_log_fname;
+            settings["LogFXClientEnabled"] = _log_fxclient.ToString();
+
+            settings["LogTicksEnabled"] = _log_ticks.ToString();
+
             settings["GameServerEnabled"] = _use_game.ToString();
             settings["BoundsEnabled"] = _use_bounds.ToString();
-            settings["LogErrorsEnabled"] = _log_errors.ToString();
+
             settings["LogTradeErrorsEnabled"] = _log_trade_errors.ToString();
-            settings["LogTicksEnabled"] = _log_ticks.ToString();
-            settings["LogFXClientEnabled"] = _log_fxclient.ToString();
 
             settings["LogOandaSend"] = _log_oa_out.ToString();
             settings["LogOandaReceive"] = _log_oa_in.ToString();
             settings["LogRightEdgeSend"] = _log_re_out.ToString();
             settings["LogRightEdgeReceive"] = _log_re_in.ToString();
-
             settings["LogUnknownEventsEnabled"] = _log_unknown_events.ToString();
 
-            settings["LogExceptionsEnabled"] = _log_exceptions.ToString();
-            settings["LogDebugEnabled"] = _log_debug.ToString();
-            settings["ShowErrorsEnabled"] = _show_errors.ToString();
             settings["DataFilterType"] = _data_filter_type.ToString();
             settings["WeekendStartDay"] = _weekend_start_day.ToString();
             settings["WeekendEndDay"] = _weekend_end_day.ToString();
@@ -994,99 +1122,98 @@ namespace RightEdgeOandaPlugin
         }
         #endregion
 
-        private bool _use_game = true;
-        [Description("Set this to true for fxGame, if false fxTrade will be used."), Category("Server")]
-        public bool GameServerEnabled { set { _use_game = value; } get { return (_use_game); } }
 
-        private bool _use_bounds = true;
-        [Description("Set this to true to enable order bounds"), Category("Slippage Control")]
-        public bool BoundsEnabled { set { _use_bounds = value; } get { return (_use_bounds); } }
-
-        private double _bounds = 0.0;
-        [Description("Set this to the full slip-able range size."), Category("Slippage Control")]
-        public double Bounds { set { _bounds = value; } get { return (_bounds); } }
-
-        private string _order_log_fname = "C:\\orders.xml";
-        [Description("Set this to the file name for storing order information."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
-        public string OrderLogFileName { set { _order_log_fname = value; } get { return (_order_log_fname); } }
-
+        #region fxclient options
         private string _fxclient_log_fname = "C:\\fxclient.log";
-        [Description("Set this to the file name for the internal fxClientAPI logging."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        [Description("Set this to the file name for the internal fxClientAPI logging."), Category("Logging, FXClient"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
         public string FXClientLogFileName { set { _fxclient_log_fname = value; } get { return (_fxclient_log_fname); } }
 
         private bool _log_fxclient = false;
-        [Description("Enable this for the raw internal fxClientAPI log. WARNING : this is a HUGE FILE and will contain your PASSWORD IN PLAIN TEXT!!"), Category("Logging")]
+        [Description("Enable this for the raw internal fxClientAPI log. WARNING : this is a HUGE FILE and will contain your PASSWORD IN PLAIN TEXT!!"), Category("Logging, FXClient")]
         public bool LogFXClientEnabled { set { _log_fxclient = value; } get { return (_log_fxclient); } }
+        #endregion
 
-        private string _tick_log_fname = "C:\\tick.log";
-        [Description("Set this to the file name for logging tick data."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
-        public string TickLogFileName { set { _tick_log_fname = value; } get { return (_tick_log_fname); } }
+        private OAPluginLogOptions _broker_log_opt= new OAPluginLogOptions("c:\\broker.log");
+        [Description(""), Category("Logging, Broker")]
+        public OAPluginLogOptions LogOptionsBroker {set{_broker_log_opt = value;}get {return(_broker_log_opt);}}
 
-        private bool _log_ticks = false;
-        [Description("Set this to true to enable logging of tick data to the tick log."), Category("Logging")]
-        public bool LogTicksEnabled { set { _log_ticks = value; } get { return (_log_ticks); } }
+        #region broker options
+        private bool _use_game = true;
+        [Description("Set this to true for fxGame, if false fxTrade will be used."), Category("Broker Options")]
+        public bool GameServerEnabled { set { _use_game = value; } get { return (_use_game); } }
 
-        private string _log_fname = "C:\\RightEdgeOandaPlugin.log";
-        [Description("Set this to the file name for logging."), Category("Logging"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
-        public string LogFileName { set { _log_fname = value; } get { return (_log_fname); } }
+        private bool _use_bounds = true;
+        [Description("Set this to true to enable order bounds"), Category("Broker Options")]
+        public bool Bounds { set { _use_bounds = value; } get { return (_use_bounds); } }
 
-        private bool _log_errors = true;
-        [Description("Set this to true to enable logging of errors."), Category("Logging")]
-        public bool LogErrorsEnabled { set { _log_errors = value; } get { return (_log_errors); } }
+        private double _bounds = 0.0;
+        [Description("Set this to the full slip-able range size."), Category("Broker Options")]
+        public double BoundsValue { set { _bounds = value; } get { return (_bounds); } }
+
+        private string _order_log_fname = "C:\\orders.xml";
+        [Description("Set this to the file name for storing order information."), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor)), Category("Broker Options")]
+        public string OrderLogFileName { set { _order_log_fname = value; } get { return (_order_log_fname); } }
 
         private bool _log_trade_errors = true;
-        [Description("Set this to true to enable logging of all order submission errors."), Category("Logging")]
-        public bool LogTradeErrorsEnabled { set { _log_trade_errors = value; } get { return (_log_trade_errors); } }
+        [Description("Set this to true to enable logging of all order submission errors."), Category("Logging, Broker")]
+        public bool LogTradeErrors { set { _log_trade_errors = value; } get { return (_log_trade_errors); } }
 
+        #region broker events
         private bool _log_oa_in = true;
-        [Description("Set this to true to enable logging of Oanda Account Event Responses."), Category("Event Logging")]
+        [Description("Set this to true to enable logging of Oanda Account Event Responses."), Category("Logging, Broker Events")]
         public bool LogOandaReceive { set { _log_oa_in = value; } get { return (_log_oa_in); } }
 
         private bool _log_oa_out = true;
-        [Description("Set this to true to enable logging of Oanda Account Actions."), Category("Event Logging")]
+        [Description("Set this to true to enable logging of Oanda Account Actions."), Category("Logging, Broker Events")]
         public bool LogOandaSend { set { _log_oa_out = value; } get { return (_log_oa_out); } }
 
         private bool _log_re_in = true;
-        [Description("Set this to true to enable logging of RightEdge broker orderbook calls."), Category("Event Logging")]
+        [Description("Set this to true to enable logging of RightEdge broker orderbook calls."), Category("Logging, Broker Events")]
         public bool LogRightEdgeReceive { set { _log_re_in = value; } get { return (_log_re_in); } }
 
         private bool _log_re_out = true;
-        [Description("Set this to true to enable logging of RightEdge OrderUpdated calls."), Category("Event Logging")]
+        [Description("Set this to true to enable logging of RightEdge OrderUpdated calls."), Category("Logging, Broker Events")]
         public bool LogRightEdgeSend { set { _log_re_out = value; } get { return (_log_re_out); } }
 
-        private bool _log_exceptions = true;
-        [Description("Set this to true to enable logging of exception details."), Category("Logging")]
-        public bool LogExceptionsEnabled { set { _log_exceptions = value; } get { return (_log_exceptions); } }
-
-        private bool _log_debug = true;
-        [Description("Set this to true to enable debug messages."), Category("Logging")]
-        public bool LogDebugEnabled { set { _log_debug = value; } get { return (_log_debug); } }
-        
-        private bool _show_errors = true;
-        [Description("Set this to true to enable a message box dialog on errors."), Category("Logging")]
-        public bool ShowErrorsEnabled { set { _show_errors = value; } get { return (_show_errors); } }
-
         private bool _log_unknown_events = true;
-        [Description("Set this to true to enable logging of event details for unknown Oanda Account Responses."), Category("Event Logging")]
-        public bool LogUnknownEventsEnabled { set { _log_unknown_events = value; } get { return (_log_unknown_events); } }
+        [Description("Set this to true to enable logging of event details for unknown Oanda Account Responses."), Category("Logging, Broker Events")]
+        public bool LogUnknownEvents { set { _log_unknown_events = value; } get { return (_log_unknown_events); } }
+        #endregion
+        #endregion
 
+        private OAPluginLogOptions _tick_log_opt= new OAPluginLogOptions("c:\\tick.log");
+        [Description(""), Category("Logging, Tick")]
+        public OAPluginLogOptions LogOptionsTick {set{_tick_log_opt = value;}get {return(_tick_log_opt);}}
+
+        #region tick logging options
+        private bool _log_ticks = false;
+        [Description("Set this to true to enable logging of tick data to the tick log."), Category("Logging, Tick")]
+        public bool LogTicks { set { _log_ticks = value; } get { return (_log_ticks); } }
+        #endregion
+
+        private OAPluginLogOptions _hist_log_opt= new OAPluginLogOptions("c:\\history.log");
+        [Description(""), Category("Logging, History")]
+        public OAPluginLogOptions LogOptionsHistory {set{_hist_log_opt = value;}get {return(_hist_log_opt);}}
+
+        #region history filtering options
         private DataFilterType _data_filter_type = DataFilterType.WeekendTimeFrame;
-        [Description("There are 3 filtering options for historic data downloads. Set this to 'WeekendTimeFrame' to enable the filter using the specified Weekend date/time range. Set it to 'PriceActivity' to filter bars with no price movement. Set it to 'None' to disable all filtering."), Category("Data Filter")]
+        [Description("There are 3 filtering options for historic data downloads. Set this to 'WeekendTimeFrame' to enable the filter using the specified Weekend date/time range. Set it to 'PriceActivity' to filter bars with no price movement. Set it to 'None' to disable all filtering."), Category("History Filter Options")]
         public DataFilterType DataFilterType { set { _data_filter_type = value; } get { return (_data_filter_type); } }
 
         private DayOfWeek _weekend_start_day = DayOfWeek.Friday;
-        [Description("The day of the week the weekend data starts."), Category("Data Filter")]
+        [Description("The day of the week the weekend data starts."), Category("History Filter Options")]
         public DayOfWeek WeekendStartDay { set { _weekend_start_day = value; } get { return (_weekend_start_day); } }
         private TimeSpan _weekend_start_time = new TimeSpan(17, 0, 0);
-        [Description("The time of day the weekend data starts."), Category("Data Filter")]
+        [Description("The time of day the weekend data starts."), Category("History Filter Options")]
         public TimeSpan WeekendStartTime { set { _weekend_start_time = value; } get { return (_weekend_start_time); } }
 
         private DayOfWeek _weekend_end_day = DayOfWeek.Sunday;
-        [Description("The day of the week the weekend data stops."), Category("Data Filter")]
+        [Description("The day of the week the weekend data stops."), Category("History Filter Options")]
         public DayOfWeek WeekendEndDay { set { _weekend_end_day = value; } get { return (_weekend_end_day); } }
         private TimeSpan _weekend_end_time = new TimeSpan(11, 0, 0);
-        [Description("The time of day the weekend data stops."), Category("Data Filter")]
+        [Description("The time of day the weekend data stops."), Category("History Filter Options")]
         public TimeSpan WeekendEndTime { set { _weekend_end_time = value; } get { return (_weekend_end_time); } }
+        #endregion
     }
 
     #region Oanda fxEvent managers
@@ -1161,9 +1288,13 @@ namespace RightEdgeOandaPlugin
         [XmlIgnore]
         public OAPluginOptions OAPluginOptions { set { _opts = value; } get { return (_opts); } }
 
+        private BrokerLog _broker_log = null;
+        [XmlIgnore]
+        public BrokerLog BrokerLog { set { _broker_log = value; } get { return (_broker_log); } }
+
         private PluginLog _log = null;
         [XmlIgnore]
-        public PluginLog PluginLog { set { _log = value; } get { return (_log); } }
+        public PluginLog Log { set { _log = value; } get { return (_log); } }
 
         private string _user = string.Empty;
         private string _pw = string.Empty;
@@ -1579,31 +1710,31 @@ namespace RightEdgeOandaPlugin
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException se)
             {
-                _log.captureException(se);
+                _broker_log.captureException(se);
                 res.setError("Oanda Session Exception : " + se.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException oae)
             {
-                _log.captureException(oae);
+                _broker_log.captureException(oae);
                 res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -1624,25 +1755,25 @@ namespace RightEdgeOandaPlugin
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException se)
             {
-                _log.captureException(se);
+                _broker_log.captureException(se);
                 res.setError("Session Exception : " + se.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException oae)
             {
-                _log.captureException(oae);
+                _broker_log.captureException(oae);
                 res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -1688,32 +1819,32 @@ namespace RightEdgeOandaPlugin
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException se)
             {
-                _log.captureException(se);
+                _broker_log.captureException(se);
                 res.setError("Oanda Session Exception : " + se.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException oae)
             {
-                _log.captureException(oae);
+                _broker_log.captureException(oae);
                 res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, false);
                 if (oae.Message == "No data available") { res.OrderMissing = true; }
                 return res;
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -1758,32 +1889,32 @@ namespace RightEdgeOandaPlugin
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException se)
             {
-                _log.captureException(se);
+                _broker_log.captureException(se);
                 res.setError("Oanda Session Exception : " + se.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException oae)
             {
-                _log.captureException(oae);
+                _broker_log.captureException(oae);
                 res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, false);
                 if (oae.Message == "No data available") { res.OrderMissing = true; }
                 return res;
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -1799,32 +1930,32 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _log.captureOAOut(acct, mo, "MODIFY");
+                _broker_log.captureOAOut(acct, mo, "MODIFY");
                 acct.Modify(mo);
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : {" + oe.Code + "} " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unable to modify order id '" + mo.Id + "' at oanda the servers : '{" + e.Code + "} " + e.Message + "'.", FXClientResponseType.Rejected, false);
                 if (e.Message == "No data available") { res.OrderMissing = true; }
                 return res;
@@ -1840,32 +1971,32 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _log.captureOAOut(acct, lo, "MODIFY");
+                _broker_log.captureOAOut(acct, lo, "MODIFY");
                 acct.Modify(lo);
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : {" + oe.Code + "} " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unable to modify order id '" + lo.Id + "' at oanda the servers : '{" + e.Code + "} " + e.Message + "'.", FXClientResponseType.Rejected, false);
                 if (e.Message == "No data available") { res.OrderMissing = true; }
                 return res;
@@ -1881,32 +2012,32 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _log.captureOAOut(acct, mo, "EXECUTE");
+                _broker_log.captureOAOut(acct, mo, "EXECUTE");
                 acct.Execute(mo);
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : {" + oe.Code + "} " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unable to submit market order to oanda the servers : '{" + e.Code + "} " + e.Message + "'.", FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -1921,32 +2052,32 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _log.captureOAOut(acct, lo, "EXECUTE");
+                _broker_log.captureOAOut(acct, lo, "EXECUTE");
                 acct.Execute(lo);
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : {" + oe.Code + "} " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unable to submit limit order to oanda the servers : '{" + e.Code + "} " + e.Message + "'.", FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -1961,32 +2092,32 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _log.captureOAOut(acct, mo, "CLOSE");
+                _broker_log.captureOAOut(acct, mo, "CLOSE");
                 acct.Close(mo);
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : {" + oe.Code + "} " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unable to close trade id '" + mo.Id + "' at oanda : '{" + e.Code + "} " + e.Message + "'.", FXClientResponseType.Rejected, false);
                 if (e.Message == "No data available") { res.OrderMissing = true; }
                 return res;
@@ -2002,32 +2133,32 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _log.captureOAOut(acct, lo, "CLOSE");
+                _broker_log.captureOAOut(acct, lo, "CLOSE");
                 acct.Close(lo);
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
             catch (OrderException oe)
             {
-                _log.captureException(oe);
+                _broker_log.captureException(oe);
                 res.setError("Oanda Order Exception : {" + oe.Code + "} " + oe.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (OAException e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unable to close trade id '" + lo.Id + "' at oanda : '{" + e.Code + "} " + e.Message + "'.", FXClientResponseType.Rejected, false);
                 if (e.Message == "No data available") { res.OrderMissing = true; }
                 return res;
@@ -2054,25 +2185,25 @@ namespace RightEdgeOandaPlugin
             }
             catch (SessionException oase)
             {
-                _log.captureException(oase);
+                _broker_log.captureException(oase);
                 res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
             catch (AccountException ae)
             {
-                _log.captureException(ae);
+                _broker_log.captureException(ae);
                 res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
                 return res;
             }
             catch (OAException oae)
             {
-                _log.captureException(oae);
+                _broker_log.captureException(oae);
                 res.setError("Oanda General Exception : {" + oae.Code + "} " + oae.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _broker_log.captureException(e);
                 res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
@@ -2082,11 +2213,11 @@ namespace RightEdgeOandaPlugin
     public class ResponseProcessor
     {
         public ResponseProcessor() { }
-        public ResponseProcessor(OandAPlugin parent, PluginLog log) { _log = log; _parent = parent; }
+        public ResponseProcessor(OandAPlugin parent, BrokerLog log) { _log = log; _parent = parent; }
 
-        private PluginLog _log = null;
+        private BrokerLog _log = null;
         [XmlIgnore]
-        public PluginLog PluginLog { set { _log = value; } get { return (_log); } }
+        public BrokerLog BrokerLog { set { _log = value; } get { return (_log); } }
 
         private OandAPlugin _parent = null;
         [XmlIgnore]
@@ -2097,6 +2228,8 @@ namespace RightEdgeOandaPlugin
         private List<ResponseRecord> _response_pending_list = new List<ResponseRecord>();
         private Thread _response_processor = null;
         private bool _waiting = false;
+
+        private int _join_timeout_ms = 15000;
 
         public void Start()
         {
@@ -2112,7 +2245,10 @@ namespace RightEdgeOandaPlugin
         {
             if (_response_processor == null) { return; }
             _response_processor.Abort();
-            _response_processor.Join();
+            if (!_response_processor.Join(_join_timeout_ms))
+            {
+                _log.captureError("Unable to join with response processing thread for shutdown.", "ResponseProcessor Error");
+            }
             _response_processor = null;
         }
         private void threadMain()
@@ -2873,9 +3009,9 @@ namespace RightEdgeOandaPlugin
         [XmlIgnore]
         public OandAPlugin OAPlugin { set { _parent = value; } get { return (_parent); } }
 
-        private PluginLog _log = null;
+        private BrokerLog _log = null;
         [XmlIgnore]
-        public PluginLog PluginLog { set { _log = value; } get { return (_log); } }
+        public BrokerLog BrokerLog { set { _log = value; } get { return (_log); } }
 
         //FIX ME - this really should be private only, but how to get it to serialize then??
         private RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> _accounts = new RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords>();
@@ -3149,9 +3285,9 @@ namespace RightEdgeOandaPlugin
             { lo.Units = -1 * lo.Units; }
 
             //FIX ME<-- extract an order specific bounds value from the order/symbol tags...
-            double slippage = _opts.Bounds;//use the broker value as the fallback
+            double slippage = _opts.BoundsValue;//use the broker value as the fallback
 
-            if (_opts.BoundsEnabled)//always honor the broker enabled setting
+            if (_opts.Bounds)//always honor the broker enabled setting
             {
                 lo.HighPriceLimit = order.LimitPrice + 0.5 * slippage;
                 lo.LowPriceLimit = order.LimitPrice - 0.5 * slippage;
@@ -3190,10 +3326,10 @@ namespace RightEdgeOandaPlugin
             if (order.TransactionType == TransactionType.Short)
             { mo.Units = -1 * mo.Units; }
 
-            if (_opts.BoundsEnabled)//always honor the broker enabled setting
+            if (_opts.Bounds)//always honor the broker enabled setting
             {
                 //FIX ME<-- extract an order specific bounds value from the order/symbol tags...
-                double slippage = _opts.Bounds;//use the broker value as the fallback
+                double slippage = _opts.BoundsValue;//use the broker value as the fallback
                 double price = order.LimitPrice;
                 if (price != 0.0)
                 {
@@ -4947,8 +5083,10 @@ namespace RightEdgeOandaPlugin
         private OrderBook _orderbook = new OrderBook();
         public OrderBook OrderBook { get { return (_orderbook); } }
 
-        private static PluginLog _log = new PluginLog();
-        private static PluginLog _tick_log = new PluginLog();
+        
+        private static BrokerLog _log = new BrokerLog();
+        private static TickLog _tick_log = new TickLog();
+        private static PluginLog _history_log = new PluginLog();
 
         private void disconnectCleanup()
         {
@@ -5120,26 +5258,42 @@ namespace RightEdgeOandaPlugin
         public bool Initialize(RightEdge.Common.SerializableDictionary<string, string> settings)
         {
             if (_opts == null) { _opts = new OAPluginOptions(); }
+            
             bool r=_opts.loadRESettings(settings);
-            _log.FileName = _opts.LogFileName;
-            _log.LogErrors = _opts.LogErrorsEnabled;
-            _log.ShowErrors = _opts.ShowErrorsEnabled;
-            _log.LogDebug = _opts.LogDebugEnabled;
-            _log.LogExceptions = _opts.LogExceptionsEnabled;
+            
+            if (!r) { _opts = new OAPluginOptions(); }
+
+            _log.FileName = _opts.LogOptionsBroker.LogFileName;
+            _log.LogErrors = _opts.LogOptionsBroker.LogErrors;
+            _log.ShowErrors = _opts.LogOptionsBroker.ShowErrors;
+            _log.LogDebug = _opts.LogOptionsBroker.LogDebug;
+            _log.LogExceptions = _opts.LogOptionsBroker.LogExceptions;
+
+            _tick_log.FileName = _opts.LogOptionsTick.LogFileName;
+            _tick_log.LogErrors = _opts.LogOptionsTick.LogErrors;
+            _tick_log.ShowErrors = _opts.LogOptionsTick.ShowErrors;
+            _tick_log.LogDebug = _opts.LogOptionsTick.LogDebug;
+            _tick_log.LogExceptions = _opts.LogOptionsTick.LogExceptions;
+
+            _history_log.FileName = _opts.LogOptionsHistory.LogFileName;
+            _history_log.LogErrors = _opts.LogOptionsHistory.LogErrors;
+            _history_log.ShowErrors = _opts.LogOptionsHistory.ShowErrors;
+            _history_log.LogDebug = _opts.LogOptionsHistory.LogDebug;
+            _history_log.LogExceptions = _opts.LogOptionsHistory.LogExceptions;
 
             _log.LogReceiveOA = _opts.LogOandaReceive;
             _log.LogReceiveRE =_opts.LogRightEdgeReceive;
             _log.LogSendOA = _opts.LogOandaSend;
             _log.LogSendRE = _opts.LogRightEdgeSend;
 
-            _log.LogUnknownEvents = _opts.LogUnknownEventsEnabled;
+            _log.LogUnknownEvents = _opts.LogUnknownEvents;
 
-            _tick_log.FileName = _opts.TickLogFileName;
-            _tick_log.LogDebug = _opts.LogTicksEnabled;
+            _tick_log.LogTicks = _opts.LogTicks;
 
             _orderbook.OrderLogFileName = _opts.OrderLogFileName;
 
             _orderbook.OAPluginOptions = _opts;
+            
             return r;
         }
 
@@ -5152,24 +5306,35 @@ namespace RightEdgeOandaPlugin
         {
             clearError();
 
+            PluginLog conlog = null;
+            switch (connectOptions)
+            {
+                case ServiceConnectOptions.Broker: conlog = _log; break;
+                case ServiceConnectOptions.HistoricalData: conlog = _history_log; break;
+                case ServiceConnectOptions.LiveData: conlog = _tick_log; break;
+            }
+            if (conlog == null)
+            { return false; }
+
             _main_thread_id = Thread.CurrentThread.ManagedThreadId;
 
             if (_fx_client.OAPluginOptions == null) { _fx_client.OAPluginOptions = _opts; }
-            if (_fx_client.PluginLog == null) { _fx_client.PluginLog = _log; }
-
-            if (_orderbook.OAPlugin == null) { _orderbook.OAPlugin = this; }
-            if (_orderbook.PluginLog == null) { _orderbook.PluginLog = _log; }
+            if (_fx_client.Log == null) { _fx_client.Log = conlog; }
 
             FXClientResult cres = _fx_client.Connect(connectOptions,_username,_password);
             if (cres.Error)
             {
                 _fx_client.Disconnect();
-                _log.captureError(cres.Message, "Connect Error");
+                conlog.captureError(cres.Message, "Connect Error");
                 return false;
             }
 
             if (connectOptions == ServiceConnectOptions.Broker)
             {
+                if (_orderbook.OAPlugin == null) { _orderbook.OAPlugin = this; }
+                if (_orderbook.BrokerLog == null) { _orderbook.BrokerLog = _log; }
+                if (_fx_client.BrokerLog == null) { _fx_client.BrokerLog = _log; }
+                
                 //this is a broker connect, start up the response processor
                 if (_response_processor == null)
                 {
@@ -5181,13 +5346,13 @@ namespace RightEdgeOandaPlugin
                 {
                     foreach (int aid in _reconnect_account_ids)
                     {
-                        _log.captureDebug("Connect re-establishing account listener for account '" + aid + "'.");
+                        conlog.captureDebug("Connect re-establishing account listener for account '" + aid + "'.");
 
                         TaskResult tres = _response_processor.ActivateAccountResponder(aid);
                         if (tres.Error)
                         {
                             _fx_client.Disconnect();
-                            _log.captureError(tres.Message, "Connect Error");
+                            conlog.captureError(tres.Message, "Connect Error");
 
                             //remove un-added aid from _handling list so it gets 'skipped' next time
                             if (!tres.TaskCompleted) { _reconnect_account_ids.Remove(aid); }
@@ -5273,7 +5438,7 @@ namespace RightEdgeOandaPlugin
                 if (startDate > availableEnd || endDate < availableStart)
                 {
                     _error_str = "No data available for the requested time period.";
-                    _log.captureError(_error_str,  "RetrieveData Error");
+                    _history_log.captureError(_error_str, "RetrieveData Error");
                     return null;
                 }
 
@@ -5284,12 +5449,12 @@ namespace RightEdgeOandaPlugin
                     if (hal.Disconnected)
                     {
                         _error_str = "Disconnected : " + hal.Message;
-                        _log.captureError(_error_str, "RetrieveData Error");
+                        _history_log.captureError(_error_str, "RetrieveData Error");
                         _fx_client.Disconnect();
                         return null;
                     }
                     _error_str = hal.Message;
-                    _log.captureError(_error_str, "RetrieveData Error");
+                    _history_log.captureError(_error_str, "RetrieveData Error");
                     return null;
                 }
 
@@ -5333,7 +5498,7 @@ namespace RightEdgeOandaPlugin
                             break;
                         default:
                             _error_str = "Unknown Data Filter Type setting '" + filter_type + "'.";
-                            _log.captureError(_error_str, "RetrieveData Error");
+                            _history_log.captureError(_error_str, "RetrieveData Error");
                             return null;
                     }
                     if (drop_bar) { continue; }
@@ -5347,9 +5512,9 @@ namespace RightEdgeOandaPlugin
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _history_log.captureException(e);
                 _error_str = "Unhandled exception : " + e.Message;
-                _log.captureError(_error_str,  "RetrieveData Error");
+                _history_log.captureError(_error_str, "RetrieveData Error");
                 return null;
             }
         }
@@ -5387,7 +5552,7 @@ namespace RightEdgeOandaPlugin
         }
         private void fireTickEvent(Symbol sym, TickData tick)
         {
-            _tick_log.captureDebug("TICK : time='" + tick.time + "' price='" + tick.price + "' type='" + tick.tickType + "' size='" + tick.size + "'");
+            _tick_log.captureTick(sym,tick);
             _gtd_event(sym, tick);
         }
 
@@ -5431,9 +5596,9 @@ namespace RightEdgeOandaPlugin
             }
             catch (Exception e)
             {
-                _log.captureException(e);
+                _tick_log.captureException(e);
                 _error_str = "Unhandled exception : " + e.Message;
-                _log.captureError(_error_str,  "RetrieveData Error");
+                _tick_log.captureError(_error_str, "RetrieveData Error");
                 throw new OAPluginException(_error_str, e);
             }
 
@@ -5455,7 +5620,7 @@ namespace RightEdgeOandaPlugin
                 {
                     _error_str = res.Message;
                 }
-                _log.captureError(_error_str,  "SetWatchedSymbols Error");
+                _tick_log.captureError(_error_str, "SetWatchedSymbols Error");
                 return false;
             }
             return true;
@@ -5964,7 +6129,7 @@ namespace RightEdgeOandaPlugin
         }
         private void invalidateOrder(BrokerOrder order, out string orderId)
         {//order (or a plugin generated sub-order of order) was explicity invalidated by an oanda account or order exception
-            if (_opts.LogTradeErrorsEnabled)
+            if (_opts.LogTradeErrors)
             {
                 string ostr = "ORDER INVALID : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Symbol='" + order.OrderSymbol.Name + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.";
                 _log.captureError(ostr, "Order Invalid");
@@ -5982,7 +6147,7 @@ namespace RightEdgeOandaPlugin
         }
         private void rejectOrder(BrokerOrder order, out string orderId)
         {//order (or a plugin generated sub-order of order) encountered a critical failure, not related to execution at oanda.
-            if (_opts.LogTradeErrorsEnabled)
+            if (_opts.LogTradeErrors)
             {
                 string ostr = "ORDER REJECTED : OrderID='" + order.OrderId + "' PosID='" + order.PositionID + "' Symbol='" + order.OrderSymbol.Name + "' Shares='" + order.Shares + "' Transaction='" + order.TransactionType + "' Type='" + order.OrderType + "' State='" + order.OrderState + "'.";
                 _log.captureError(ostr, "Order Rejected");
