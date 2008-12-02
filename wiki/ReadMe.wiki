@@ -37,7 +37,7 @@ particular symbol and order direction (ie long or short). Included in the
 directives are the account to use, and the bounds values to set on any orders
 the broker receives.
 
-There is easy way to edit this file in the plugin system options. Simply bring up the RightEdge "Other Settings" service options for your configuration of the plugin and select the "Edit Trade Entities" button in the toolbar. This will open up the file you have specified in the plugin's options.
+There is an easy way to edit this file in the plugin system options. Simply bring up the RightEdge "Other Settings" service options for your configuration of the plugin and select the "Edit Trade Entities" button in the toolbar. This will open up the file you have specified in the plugin's options.
 
 ===For the Trading System===
 There is also a data element in the Trade Entity to direct a trading system's allocation. A Trading system can thus use the Order Size and Order Size Type values in combination with the Account and Account Values data to derive the appropriate trade size.
