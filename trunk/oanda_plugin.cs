@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using System.Windows.Forms.Design;
 using System.Xml.Serialization;
 using System.Runtime.Serialization;
 
@@ -17,62 +18,75 @@ using RightEdge.Common;
 using fxClientAPI;
 
 
-/* TODO
-BUGS:
- * if the fxclient wrapper functions which take an account object have to call connectOut()
-   they also need to re-fetch the account object, since it would have come from the previous connection...
-   right now those calls will probably end up throwing an "object disposed" exception
-
-FEATURE FIXES:
-  * orders price bounds
-   * currently using limitprice, but this conflicts with some order types
-     * need a better way to transport the bound price point
-   * currently bounds range is a plugin option only
-     * with a better transport mechanism this could be on a per order basis.
-   * what event does oanda fire if a (market/limit) order is rejected due to a bounds violation?
+/******************************************************************
+*******************************************************************
+TODO :
  
- * fix account handling
-    * curently using the exchange field as the transport
-      * for getting an order specific account
-    * fix & verify all broker accont status functions
-    * etc...
-  
-IMPROVEMENTS:
- * need some sort of "internal fullfilment" mechanism to match long/short orders
-   since oanda only allows one-way positions
-   * would require processing the trans link chain and some new trans types
-     which would further prep the code for full 2-way synch with
-     external fxTrade GUI events received and handled for all orders under RE's domain.
+ * SetAccountState()
+    * remove manual liveopenposition.xml parsing
+    * what happens when there's an open order???
+    * what happens when a re-synch'd order is hit (p stops/targets/close and o.open)??? 
 
- * don't include the whole broker record when serializing the orderbook
-   * will require exposing certain broker record members in the order record space
-     since they are usefull to persist.
-   * there is some duplication in the BrokerPositionRecord (as it is a RightEdge BrokerPosition derivative)
-*/
-
+ * "object disposed" exception :
+   there may be some code left that does not properly refetch the account object
+   when the out channel is reconnected due to an oanda exception
+   
+ * fix cross price pair selection logic and calculation math
+ 
+ * be sure all bounds violation events from oanda are handled
+   market opens, limit fills, stop/target fills, etc...
+ 
+ * finish generalizing the custom comparable dictionary form
+ 
+WISH LIST :
+ 
+ * full 2-way position sync between right edge and oanda :
+   requires the ability to initiate orders into the rightedge space from the broker plugin.
+   Currently right edge does not allow this behaviour and will throw an exception.
+   
+   There is some code to handle the following situations, but they will not be fully
+   operational until right edge supports order creation from the broker plugin.
+   
+   * long/short order pairing : the opposing open can be handled but this also requires
+     initiating at least one close order.
+   * oanda client initiated events effecting right edge managed positions
+*******************************************************************
+*******************************************************************/
 
 namespace RightEdgeOandaPlugin
 {
-    public class NamelessConverter : ExpandableObjectConverter
+    public interface INamedObject
+    {
+        string Name { get; }
+        void SetName(string n);
+    }
+    public class NamedConverter : TypeConverter
+    {
+        public override object ConvertTo(
+                 ITypeDescriptorContext context,
+                 CultureInfo culture,
+                 object value,
+                 Type destinationType)
         {
-            public override object ConvertTo(
-                     ITypeDescriptorContext context,
-                     CultureInfo culture,
-                     object value,
-                     Type destinationType)
+            if (destinationType == typeof(string))
             {
-                if (destinationType == typeof(string))
+                if (value is INamedObject)
+                {
+                    return ((INamedObject)value).Name;
+                }
+                else
                 {
                     return "";
                 }
-
-                return base.ConvertTo(
-                    context,
-                    culture,
-                    value,
-                    destinationType);
             }
+
+            return base.ConvertTo(
+                context,
+                culture,
+                value,
+                destinationType);
         }
+    }
 
     #region XML Dictionary Serialization
     /// http://weblogs.asp.net/pwelter34/archive/2006/05/03/444961.aspx
@@ -81,7 +95,7 @@ namespace RightEdgeOandaPlugin
     public class SerializableDictionary<TKey, TValue>
         : Dictionary<TKey, TValue>, IXmlSerializable
     {
-        public SerializableDictionary(){ }
+        public SerializableDictionary() { }
         public SerializableDictionary(IEqualityComparer<TKey> comp) : base(comp) { }
 
         #region IXmlSerializable Members
@@ -132,13 +146,12 @@ namespace RightEdgeOandaPlugin
     }
     #endregion
 
-
     #region OAPluginException
     /// <summary>
     /// Custom exception.
     /// </summary>
     [Serializable]
-    public class OAPluginException : Exception,ISerializable
+    public class OAPluginException : Exception, ISerializable
     {
         #region Local private members
         protected DateTime _dateTime = DateTime.Now;
@@ -238,15 +251,18 @@ namespace RightEdgeOandaPlugin
     public class FunctionResult
     {
         public FunctionResult() { }
-        public FunctionResult(FunctionResult src) { Error = src.Error; _message = src.Message; }
+        public FunctionResult(FunctionResult src) { _error = src._error; _message = src._message; }
 
-        public bool Error = false;
+        private bool _error = false;
+        public bool Error { set { _error = value; } get { return (_error); } }
 
         private string _message = string.Empty;
         public string Message { set { _message = value; } get { return (_message); } }
 
-        public void setError(string m) { _message = m; Error = true; }
-        public void clearError() { _message = string.Empty; Error = false; }
+        public void setError(string m) { _message = m; _error = true; }
+        public void clearError() { _message = string.Empty; _error = false; }
+
+        public static FunctionResult newError(string m) { FunctionResult fr = new FunctionResult(); fr.setError(m); return fr; }
     }
     public class FunctionObjectResult<T> : FunctionResult
     {
@@ -255,7 +271,7 @@ namespace RightEdgeOandaPlugin
 
         public T ResultObject = default(T);
     }
-    
+
     public class TaskResult : FunctionResult
     {
         public TaskResult() { }
@@ -272,6 +288,7 @@ namespace RightEdgeOandaPlugin
 
     public interface IFXClientResponse
     {
+        bool Error { set; get; }
         string Message { set; get; }
         FXClientResponseType FXClientResponse { set; get; }
         bool Disconnected { set; get; }
@@ -360,7 +377,34 @@ namespace RightEdgeOandaPlugin
             base.setError(m);
         }
     }
-        
+
+    public class FXClientTaskObjectResult<T> : TaskObjectResult<T>,IFXClientResponse
+    {
+        private FXClientResponseType _response = FXClientResponseType.Invalid;
+        public FXClientResponseType FXClientResponse { set { _response = value; } get { return (_response); } }
+
+        private bool _discon = false;
+        public bool Disconnected { set { _discon = value; } get { return (_discon); } }
+
+        private bool _order_missing = false;
+        public bool OrderMissing { set { _order_missing = value; } get { return (_order_missing); } }
+
+        private int _orders_sent = 0;
+        public int OrdersSent { set { _orders_sent = value; } get { return (_orders_sent); } }
+
+        public void setError(string m, FXClientResponseType cresp)
+        {
+            FXClientResponse = cresp;
+            base.setError(m);
+        }
+        public void setError(string m, FXClientResponseType cresp, bool discon)
+        {
+            FXClientResponse = cresp;
+            Disconnected = discon;
+            base.setError(m);
+        }
+    }
+
     public class PositionFetchResult : FunctionObjectResult<BrokerPositionRecord>
     {
         public bool PositionExists { get { return (ResultObject != null); } }
@@ -404,6 +448,19 @@ namespace RightEdgeOandaPlugin
     public enum CustomBarFrequency { Tick, OneMinute, FiveMinute, TenMinute, FifteenMinute, ThirtyMinute, SixtyMinute, ThreeHour, FourHour, Daily, Weekly, Monthly, Yearly }
     public static class OandAUtils
     {
+        public static string PluginVersion()
+        {
+            System.Reflection.Assembly[] libs = AppDomain.CurrentDomain.GetAssemblies();
+            foreach (System.Reflection.Assembly a in libs)
+            {
+                System.Reflection.AssemblyName n= a.GetName();
+                if (n.Name == "RightEdgeOandaPlugin")
+                {
+                    return n.Version.ToString();
+                }
+            }
+            return "";
+        }
         public static CustomBarFrequency convertToCustomBarFrequency(int f)
         {
             switch (f)
@@ -523,73 +580,6 @@ namespace RightEdgeOandaPlugin
             return (rt);
         }
 
-        //FIX ME - finish this up...
-        public static double determineRate(fxClient fx_client, bool is_buy, DateTime timestamp, string base_cur, string quote_cur)
-        {
-            string b_sym = base_cur + "/" + quote_cur;
-            fxPair b_pair = new fxPair(b_sym);
-
-            TimeSpan time_to_order = DateTime.UtcNow.Subtract(timestamp);
-            int ticks_to_trans = (time_to_order.Seconds % 5) + 1;
-
-            fxTick b_tick = fx_client.RateTable.GetRate(b_pair);
-
-            //array of fxHistoryPoints
-            ArrayList b_rates = fx_client.RateTable.GetHistory(b_pair, Interval.Every_5_Seconds, ticks_to_trans);
-
-            //find in b_rates index of tick with timestamp that contains the transaction timestamp
-            int b_rate_i = 0;
-
-            //double b_rate_avg_pr;
-            //double b_tick_pr;
-
-            fxHistoryPoint b_rate = (fxHistoryPoint)b_rates[b_rate_i];
-            if (is_buy)
-            {
-
-                //b_rate_avg_pr=;
-
-                //b_tick_pr=;
-            }
-            else
-            {
-                // b_rate_avg_pr=;
-                //b_tick_pr=;
-            }
-            //log b pair, tick, avg,i and rates[i]
-            return 0.0;
-        }
-
-        public static Fill generateFillFromTransaction(fxClient fx_client, Transaction t, string base_currency)
-        {
-            Fill fill = new Fill();
-            fill.FillDateTime = t.Timestamp;
-
-            double sym_pr = t.Price;
-            double act_pr = 1.0;
-
-            // Symbol : Base/Quote
-            if (t.Base == base_currency)
-            {
-                act_pr = 1.0 / sym_pr;
-            }
-            else if (t.Quote != base_currency)
-            {//neither the Base nor the Quote is the base_currency
-
-                //determine a Base/base_currency and/or Quote/base_currency cross price factor
-                double b_pr = OandAUtils.determineRate(fx_client, t.IsBuy(), t.Timestamp, t.Base, base_currency);
-                double q_pr = OandAUtils.determineRate(fx_client, t.IsBuy(), t.Timestamp, t.Quote, base_currency);
-
-                //FIX ME - convert act_pr using the cross factor
-
-            }
-            //else (t.Quote == base_currency)
-
-            fill.Price = new Price(sym_pr, act_pr);
-
-            fill.Quantity = (t.Units < 0) ? (-1 * t.Units) : t.Units;
-            return (fill);
-        }
         public static BarData convertBarData(fxHistoryPoint hpoint)
         {
             CandlePoint cpoint = hpoint.GetCandlePoint();
@@ -702,14 +692,216 @@ namespace RightEdgeOandaPlugin
                     throw (new OAPluginException("Unable to convert Interval input frequency value '" + fi + "'."));
             }
         }
+
+        public static PositionType convertToPositionType(TransactionType transactionType)
+        {
+            switch (transactionType)
+            {
+                case TransactionType.Buy: return PositionType.Long;
+                case TransactionType.Sell: return PositionType.Long;
+                case TransactionType.Short: return PositionType.Short;
+                case TransactionType.Cover: return PositionType.Short;
+                default:
+                    throw new OAException("Unable to convert transaction type '" + transactionType + "' to position type.");
+            }
+        }
     }
     #endregion
 
-    public class PluginLog
+    #region LiveOpenPositions serialization classes
+    [Serializable]
+    public class TradeOrderXml
+    {
+        private string _o_id = string.Empty;
+        public string OrderID { set { _o_id = value; } get { return _o_id; } }
+
+        private string _pos_id = string.Empty;
+        public string PosID { set { _pos_id = value; } get { return _pos_id; } }
+
+        private TradeType _tt = TradeType.None;
+        public TradeType TradeType { set { _tt = value; } get { return _tt; } }
+        
+        private string _desc = string.Empty;
+        public string Description { set { _desc = value; } get { return _desc; } }
+
+        private int _bars_valid = -1;
+        public int BarsValid { set { _bars_valid = value; } get { return _bars_valid; } }
+
+        private bool _pending_cancel = false;
+        public bool CancelPending { set { _pending_cancel = value; } get { return _pending_cancel; } }
+    }
+
+    [Serializable]
+    public class PositionDataXml
+    {
+        private string _pos_id = string.Empty;
+        public string PosID { set { _pos_id = value; } get { return _pos_id; } }
+
+        private Symbol _sym = null;
+        public Symbol Symbol { set { _sym = value; } get { return _sym; } }
+
+        private PositionType _pt = PositionType.Long;
+        public PositionType PositionType { set { _pt = value; } get { return _pt; } }
+
+        private string _desc = string.Empty;
+        public string Description { set { _desc = value; } get { return _desc; } }
+
+        private List<TradeInfo> _trades = new List<TradeInfo>();
+        public List<TradeInfo> Trades { set { _trades = value; } get { return _trades; } }
+
+        private List<TradeOrderXml> _pending = new List<TradeOrderXml>();
+        public List<TradeOrderXml> PendingOrders { set { _pending = value; } get { return _pending; } }
+
+        private double _ptarget = 0.0;
+        public double ProfitTarget { set { _ptarget = value; } get { return _ptarget; } }
+
+        private double _ptarget_price = 0.0;
+        public double ProfitTargetPrice { set { _ptarget_price = value; } get { return _ptarget_price; } }
+
+        private TargetPriceType _ptarget_type = TargetPriceType.None;
+        public TargetPriceType ProfitTargetType { set { _ptarget_type = value; } get { return _ptarget_type; } }
+
+        private double _sloss = 0.0;
+        public double StopLoss { set { _sloss = value; } get { return _sloss; } }
+
+        private double _sloss_price = 0.0;
+        public double StopLossPrice { set { _sloss_price = value; } get { return _sloss_price; } }
+
+        private TargetPriceType _sloss_type = TargetPriceType.None;
+        public TargetPriceType StopLossType { set { _sloss_type = value; } get { return _sloss_type; } }
+
+        private double _tstop = 0.0;
+        public double TrailingStop { set { _tstop = value; } get { return _tstop; } }
+
+        private TargetPriceType _tstop_type = TargetPriceType.None;
+        public TargetPriceType TrailingStopType { set { _tstop_type = value; } get { return _tstop_type; } }
+
+        private int _bar_count_exit = -1;
+        public int BarCountExit { set { _bar_count_exit = value; } get { return _bar_count_exit; } }
+
+        private bool _pending_close = false;
+        public bool PendingClose { set { _pending_close = value; } get { return _pending_close; } }
+
+        private bool _is_pending = false;
+        public bool IsPending { set { _is_pending = value; } get { return _is_pending; } }
+
+        /*
+        public override FunctionResult initFromSerialized<T>(T v)
+        {
+            if (typeof(T) == typeof(PositionDataXml))
+            {
+                PositionDataXml src = (PositionDataXml)((object)v);
+                _bar_count_exit = src.BarCountExit;
+                _desc = src.Description;
+                _is_pending = src.IsPending;
+                _pending = src.PendingOrders;
+                _pending_close = src.PendingClose;
+                _pos_id = src.PosID;
+                _pt = src.PositionType;
+                _ptarget = src.ProfitTarget;
+                _ptarget_price = src.ProfitTargetPrice;
+                _ptarget_type = src.ProfitTargetType;
+                _sloss = src.StopLoss;
+                _sloss_price = src.StopLossPrice;
+                _sloss_type = src.StopLossType;
+                _sym = src.Symbol;
+                _trades = src.Trades;
+                _tstop = src.TrailingStop;
+                _tstop_type = src.TrailingStopType;
+            }
+            return base.initFromSerialized<T>(v);
+        }
+        public override FunctionResult initFromSerialized(Type t, object v)
+        {
+            if (typeof(PositionDataXml) == t)
+            {
+                PositionDataXml src = (PositionDataXml)v;
+                _bar_count_exit = src.BarCountExit;
+                _desc = src.Description;
+                _is_pending = src.IsPending;
+                _pending = src.PendingOrders;
+                _pending_close = src.PendingClose;
+                _pos_id = src.PosID;
+                _pt = src.PositionType;
+                _ptarget = src.ProfitTarget;
+                _ptarget_price = src.ProfitTargetPrice;
+                _ptarget_type = src.ProfitTargetType;
+                _sloss = src.StopLoss;
+                _sloss_price = src.StopLossPrice;
+                _sloss_type = src.StopLossType;
+                _sym = src.Symbol;
+                _trades = src.Trades;
+                _tstop = src.TrailingStop;
+                _tstop_type = src.TrailingStopType;
+            }
+            return base.initFromSerialized(t, v);
+        }
+        */
+    }
+
+    [Serializable]
+    public class PortfolioXml : XMLFileSerializeBase
+    {
+        List<PositionDataXml> _positions = new List<PositionDataXml>();
+        public List<PositionDataXml> Positions { set { _positions = value; } get { return _positions; } }
+
+        List<BrokerOrder> _pending = new List<BrokerOrder>();
+        public List<BrokerOrder> PendingOrders { set { _pending = value; } get { return _pending; } }
+
+        List<BrokerPosition> _broker_positions = new List<BrokerPosition>();
+        public List<BrokerPosition> BrokerPositions { set { _broker_positions = value; } get { return _broker_positions; } }
+
+        public override FunctionResult initFromSerialized<T>(T v)
+        {
+            if (typeof(T) == typeof(PortfolioXml))
+            {
+                PortfolioXml src = (PortfolioXml)((object)v);
+                _broker_positions = src.BrokerPositions;
+                _pending = src.PendingOrders;
+                _positions = src.Positions;
+            }
+            return base.initFromSerialized<T>(v);
+        }
+        public override FunctionResult initFromSerialized(Type t, object v)
+        {
+            if (typeof(PortfolioXml) == t)
+            {
+                PortfolioXml src = (PortfolioXml)v;
+                _broker_positions = src.BrokerPositions;
+                _pending = src.PendingOrders;
+                _positions = src.Positions;
+            }
+            return base.initFromSerialized(t, v);
+        }
+    }
+    #endregion
+
+    public interface IPluginLog
+    {
+        string FileName { set; get; }
+
+        bool LogExceptions { set; get; }
+        bool LogErrors { set; get; }
+        bool LogDebug { set; get; }
+        bool ShowErrors { set; get; }
+    }
+
+    public class PluginLog : IPluginLog
     {
         public PluginLog() { }
+        public PluginLog(PluginLog src) { Copy(src); }
 
         ~PluginLog() { closeLog(); }
+
+        public void Copy(PluginLog src)
+        {
+            _log_debug = src._log_debug;
+            _log_errors = src._log_errors;
+            _log_exceptions = src._log_exceptions;
+            _fname = src._fname;
+            _show_errors = src._show_errors;
+            _monitor_timeout = src._monitor_timeout;
+        }
 
         private bool _log_exceptions = true;
         public bool LogExceptions { set { _log_exceptions = value; } get { return (_log_exceptions); } }
@@ -737,7 +929,7 @@ namespace RightEdgeOandaPlugin
         {
             if (!Monitor.TryEnter(_lock, _monitor_timeout))
             {
-                    throw new OAPluginException("Unable to acquire lock on log file stream.");
+                throw new OAPluginException("Unable to acquire lock on log file stream.");
             }
             try
             {
@@ -755,7 +947,7 @@ namespace RightEdgeOandaPlugin
         {
             if (do_lock && !Monitor.TryEnter(_lock, _monitor_timeout))
             {
-                    throw new OAPluginException("Unable to acquire lock on log file stream.");
+                throw new OAPluginException("Unable to acquire lock on log file stream.");
             }
             try
             {
@@ -895,21 +1087,84 @@ namespace RightEdgeOandaPlugin
         private bool _log_ticks = true;
         public bool LogTicks { set { _log_ticks = value; } get { return (_log_ticks); } }
 
-        public void captureTick(Symbol sym,TickData tick)
+        public void captureTick(Symbol sym, TickData tick)
         {
             if (!_log_ticks) { return; }
             writeMessage("TICK : symbol='" + sym.Name + "' time='" + tick.time + "' price='" + tick.price + "' type='" + tick.tickType + "' size='" + tick.size + "'");
         }
     }
-    
+
     public enum DataFilterType { None, WeekendTimeFrame, PriceActivity };
 
+    public class NewFilePickUITypeEditor : UITypeEditor
+    {
+        NewFilePickUITypeEditor() : base() { }
+        public override UITypeEditorEditStyle GetEditStyle(ITypeDescriptorContext context)
+        {
+            return UITypeEditorEditStyle.Modal;
+        }
+        public override object EditValue(ITypeDescriptorContext context, IServiceProvider provider, object value)
+        {
+            OpenFileDialog form = new OpenFileDialog();
+            
+            form.FileName = (string)value;
+            form.Filter = "data files (*.xml;*.csv)|*.xml;*.csv|log files (*.log)|*.log|all files (*.*)|*.*";
+            
+            if (form.FileName.EndsWith(".xml")) { form.FilterIndex = 1; }
+            else if (form.FileName.EndsWith(".csv")) { form.FilterIndex = 1; }
+            else if (form.FileName.EndsWith(".log")) { form.FilterIndex = 2; }
+            else { form.FilterIndex = 3; }
+            
+            form.CheckFileExists = false;
+            form.CheckPathExists = true;
+            
+            DialogResult fres = form.ShowDialog();
+            if (fres != DialogResult.OK) { return value; }
+
+            if (form.FileName == (string)value){ return value; }
+            else{ return form.FileName; }
+        }
+
+    }
+
+    public class PluginLogOptionsEditor : UITypeEditor
+    {
+        public override UITypeEditorEditStyle GetEditStyle(ITypeDescriptorContext context)
+        {
+            return UITypeEditorEditStyle.Modal;
+        }
+        public override object EditValue(ITypeDescriptorContext context, IServiceProvider provider, object value)
+        {
+            if (provider == null) { return value; }
+            IWindowsFormsEditorService edSvc = (IWindowsFormsEditorService)provider.GetService(typeof(IWindowsFormsEditorService));
+            if (edSvc == null) { return value; }
+
+            PluginLogOptionsForm form = new PluginLogOptionsForm(new OAPluginLogOptions((OAPluginLogOptions)value));
+            DialogResult fres = edSvc.ShowDialog(form);
+            if (fres != DialogResult.OK) { return value; }
+
+            OAPluginLogOptions vpl = (OAPluginLogOptions)value;
+            OAPluginLogOptions editpl = form.LogOptions;
+            //compare editpl and form.log, if no changes return value
+            if (vpl.LogDebug == editpl.LogDebug &&
+                vpl.LogErrors == editpl.LogErrors &&
+                vpl.LogExceptions == editpl.LogExceptions &&
+                vpl.ShowErrors == editpl.ShowErrors &&
+                vpl.LogFileName == editpl.LogFileName)
+            { return value; }
+            else// value changed
+            { return editpl; }
+        }
+    }
+    
     [Serializable]
-    [TypeConverter(typeof(NamelessConverter))]
-    public class OAPluginLogOptions
+    [Editor(typeof(PluginLogOptionsEditor), typeof(UITypeEditor))]
+    [TypeConverter(typeof(NamedConverter))]
+    public class OAPluginLogOptions : INamedObject
     {
         public OAPluginLogOptions() { }
         public OAPluginLogOptions(string fn) { _log_fname = fn; }
+        public OAPluginLogOptions(OAPluginLogOptions src) { Copy(src); }
 
         public void Copy(OAPluginLogOptions src)
         {
@@ -923,8 +1178,10 @@ namespace RightEdgeOandaPlugin
             _show_errors = rsrc._show_errors;
         }
         private string _log_fname = "C:\\log.log";
-        [Description("Set this to the desired log file name."), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        [Description("Set this to the desired log file name."), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
         public string LogFileName { set { _log_fname = value; } get { return (_log_fname); } }
+        public string Name { get { return (_log_fname); } }
+        public void SetName(string n) { _log_fname = n; }
 
         private bool _log_errors = true;
         [Description("Set this to true to enable logging of errors.")]
@@ -948,7 +1205,7 @@ namespace RightEdgeOandaPlugin
     {
         public OAPluginOptions() { }
         public OAPluginOptions(OAPluginOptions src) { Copy(src); }
-        
+
         public void Copy(OAPluginOptions src)
         {
             OAPluginOptions rsrc = src;
@@ -958,9 +1215,9 @@ namespace RightEdgeOandaPlugin
             _tick_log_opt.Copy(rsrc._tick_log_opt);
             _hist_log_opt.Copy(rsrc._hist_log_opt);
             _broker_log_opt.Copy(rsrc._broker_log_opt);
-            
+
             _log_trade_errors = rsrc._log_trade_errors;
-            
+
             _log_re_in = rsrc._log_re_in;
             _log_re_out = rsrc._log_re_out;
             _log_oa_in = rsrc._log_oa_in;
@@ -968,20 +1225,27 @@ namespace RightEdgeOandaPlugin
             _log_unknown_events = rsrc._log_unknown_events;
 
             _order_log_fname = rsrc._order_log_fname;
-            
+
             _log_fxclient = rsrc._log_fxclient;
             _fxclient_log_fname = rsrc._fxclient_log_fname;
-            
+
             _log_ticks = rsrc._log_ticks;
-            
+
             _use_game = rsrc._use_game;
-            _use_bounds = rsrc._use_bounds;
 
             _data_filter_type = rsrc._data_filter_type;
             _weekend_end_day = rsrc._weekend_end_day;
             _weekend_end_time = rsrc._weekend_end_time;
             _weekend_start_day = rsrc._weekend_start_day;
             _weekend_start_time = rsrc._weekend_start_time;
+
+            _trade_entity_fname = rsrc._trade_entity_fname;
+            _default_account = rsrc._default_account;
+            //_default_base_spread = rsrc._default_base_spread;
+            _default_lower_bound = rsrc._default_lower_bound;
+            _default_lower_type = rsrc._default_lower_type;
+            _default_upper_bound = rsrc._default_upper_bound;
+            _default_upper_type = rsrc._default_upper_type;
         }
 
         #region RightEdge 'serialization'
@@ -1000,7 +1264,7 @@ namespace RightEdgeOandaPlugin
                 if (settings.ContainsKey("Tick.LogExceptionsEnabled")) { _tick_log_opt.LogExceptions = bool.Parse(settings["Tick.LogExceptionsEnabled"]); }
                 if (settings.ContainsKey("Tick.LogDebugEnabled")) { _tick_log_opt.LogDebug = bool.Parse(settings["Tick.LogDebugEnabled"]); }
                 if (settings.ContainsKey("Tick.ShowErrorsEnabled")) { _tick_log_opt.ShowErrors = bool.Parse(settings["Tick.ShowErrorsEnabled"]); }
-                
+
                 if (settings.ContainsKey("History.LogFileName")) { _hist_log_opt.LogFileName = settings["History.LogFileName"]; }
                 if (settings.ContainsKey("History.LogErrorsEnabled")) { _hist_log_opt.LogErrors = bool.Parse(settings["History.LogErrorsEnabled"]); }
                 if (settings.ContainsKey("History.LogExceptionsEnabled")) { _hist_log_opt.LogExceptions = bool.Parse(settings["History.LogExceptionsEnabled"]); }
@@ -1008,14 +1272,13 @@ namespace RightEdgeOandaPlugin
                 if (settings.ContainsKey("History.ShowErrorsEnabled")) { _hist_log_opt.ShowErrors = bool.Parse(settings["History.ShowErrorsEnabled"]); }
 
                 if (settings.ContainsKey("OrderLogFileName")) { _order_log_fname = settings["OrderLogFileName"]; }
-                
+
                 if (settings.ContainsKey("FXClientLogFileName")) { _fxclient_log_fname = settings["FXClientLogFileName"]; }
                 if (settings.ContainsKey("LogFXClientEnabled")) { _log_fxclient = bool.Parse(settings["LogFXClientEnabled"]); }
-                
+
                 if (settings.ContainsKey("LogTicksEnabled")) { _log_ticks = bool.Parse(settings["LogTicksEnabled"]); }
-                
-                if (settings.ContainsKey("GameServerEnabled"))    { _use_game = bool.Parse(settings["GameServerEnabled"]); }
-                if (settings.ContainsKey("BoundsEnabled")) { _use_bounds = bool.Parse(settings["BoundsEnabled"]); }
+
+                if (settings.ContainsKey("GameServerEnabled")) { _use_game = bool.Parse(settings["GameServerEnabled"]); }
 
                 if (settings.ContainsKey("LogTradeErrorsEnabled")) { _log_trade_errors = bool.Parse(settings["LogTradeErrorsEnabled"]); }
 
@@ -1029,8 +1292,24 @@ namespace RightEdgeOandaPlugin
                 if (settings.ContainsKey("DataFilterType")) { _data_filter_type = (DataFilterType)Enum.Parse(typeof(DataFilterType), settings["DataFilterType"]); }
                 if (settings.ContainsKey("WeekendStartDay")) { _weekend_start_day = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), settings["WeekendStartDay"]); }
                 if (settings.ContainsKey("WeekendEndDay")) { _weekend_end_day = (DayOfWeek)Enum.Parse(typeof(DayOfWeek), settings["WeekendEndDay"]); }
-                if (settings.ContainsKey("WeekendStartTime"))     { _weekend_start_time = TimeSpan.Parse(settings["WeekendStartTime"]); }
-                if (settings.ContainsKey("WeekendEndTime"))       { _weekend_end_time = TimeSpan.Parse(settings["WeekendEndTime"]); }
+                if (settings.ContainsKey("WeekendStartTime")) { _weekend_start_time = TimeSpan.Parse(settings["WeekendStartTime"]); }
+                if (settings.ContainsKey("WeekendEndTime")) { _weekend_end_time = TimeSpan.Parse(settings["WeekendEndTime"]); }
+
+                if (settings.ContainsKey("AccountValuesFileName")) { _account_values_fname = settings["AccountValuesFileName"]; }
+                if (settings.ContainsKey("AccountValuesEnabled")) { _use_account_values = bool.Parse(settings["AccountValuesEnabled"]); }
+
+                if (settings.ContainsKey("TradeEntityFileName")) { _trade_entity_fname = settings["TradeEntityFileName"]; }
+                if (settings.ContainsKey("TradeEntityName")) { _trade_entity_name = settings["TradeEntityName"]; }
+                if (settings.ContainsKey("DefaultAccount")) { _default_account = settings["DefaultAccount"]; }
+                
+                //if (settings.ContainsKey("DefaultOrderSize")) { _default_order_size = double.Parse(settings["DefaultOrderSize"]); }
+                //if (settings.ContainsKey("DefaultOrderSizeType")) { _default_order_size_type = (ValueScaleType)Enum.Parse(typeof(ValueScaleType), settings["DefaultOrderSizeType"]); }
+                //if (settings.ContainsKey("DefaultBaseSpread")) { _default_base_spread = settings["DefaultBaseSpread"]; }
+                
+                if (settings.ContainsKey("DefaultLowerBound")) { _default_lower_bound = double.Parse(settings["DefaultLowerBound"]); }
+                if (settings.ContainsKey("DefaultLowerType")) { _default_lower_type = (ValueScaleType)Enum.Parse(typeof(ValueScaleType), settings["DefaultLowerType"]); }
+                if (settings.ContainsKey("DefaultUpperBound")) { _default_upper_bound = double.Parse(settings["DefaultUpperBound"]); }
+                if (settings.ContainsKey("DefaultUpperType")) { _default_upper_type = (ValueScaleType)Enum.Parse(typeof(ValueScaleType), settings["DefaultUpperType"]); }
             }
             catch (Exception e)
             {//settings parse/load problem....
@@ -1059,14 +1338,13 @@ namespace RightEdgeOandaPlugin
             settings["History.ShowErrorsEnabled"] = _hist_log_opt.ShowErrors.ToString();
 
             settings["OrderLogFileName"] = _order_log_fname;
-            
+
             settings["FXClientLogFileName"] = _fxclient_log_fname;
             settings["LogFXClientEnabled"] = _log_fxclient.ToString();
 
             settings["LogTicksEnabled"] = _log_ticks.ToString();
 
             settings["GameServerEnabled"] = _use_game.ToString();
-            settings["BoundsEnabled"] = _use_bounds.ToString();
 
             settings["LogTradeErrorsEnabled"] = _log_trade_errors.ToString();
 
@@ -1081,6 +1359,22 @@ namespace RightEdgeOandaPlugin
             settings["WeekendEndDay"] = _weekend_end_day.ToString();
             settings["WeekendStartTime"] = _weekend_start_time.ToString();
             settings["WeekendEndTime"] = _weekend_end_time.ToString();
+
+            settings["AccountValuesFileName"] = _account_values_fname;
+            settings["AccountValuesEnabled"] = _use_account_values.ToString();
+
+            settings["TradeEntityFileName"] = _trade_entity_fname;
+            settings["TradeEntityName"] = _trade_entity_name;
+
+            settings["DefaultAccount"] = _default_account;
+            //settings["DefaultOrderSize"] = _default_order_size.ToString();
+            //settings["DefaultOrderSizeType"] = _default_order_size_type.ToString();
+            //settings["DefaultBaseSpread"] = _default_base_spread.ToString();
+            settings["DefaultLowerBound"] = _default_lower_bound.ToString();
+            settings["DefaultLowerType"] = _default_lower_type.ToString();
+            settings["DefaultUpperBound"] = _default_upper_bound.ToString();
+            settings["DefaultUpperType"] = _default_upper_type.ToString();
+
             return true;
         }
         #endregion
@@ -1122,10 +1416,61 @@ namespace RightEdgeOandaPlugin
         }
         #endregion
 
+        #region trade entity options
+        #region default value members
+        private string _default_account = string.Empty;
+        [XmlIgnore, Description("If the trade entities file is not found, then this is the default account value."), Category("Trade Values")]
+        public string DefaultAccount { get { return _default_account; } set { _default_account = value; } }
+
+        //double _default_base_spread = 0.0;
+        //[XmlIgnore, Description(""), Category("Trade Values")]
+        //public double DefaultBaseSpread { get { return _default_base_spread; } set { _default_base_spread = value; } }
+
+        //ValueScaleType _default_order_size_type = ValueScaleType.Unset;
+        //[XmlIgnore, Description(""), Category("Trade Values")]
+        //public ValueScaleType DefaultOrderSizeType { get { return _default_order_size_type; } set { _default_order_size_type = value; } }
+        //double _default_order_size = 0.0;
+        //[XmlIgnore, Description(""), Category("Trade Values")]
+        //public double DefaultOrderSize { get { return _default_order_size; } set { _default_order_size = value; } }
+
+        ValueScaleType _default_upper_type = ValueScaleType.Unset;
+        [XmlIgnore, Description("If the trade entities file is not found, then this is the default upper bounds value type."), Category("Trade Values")]
+        public ValueScaleType DefaultUpperBoundsType { get { return _default_upper_type; } set { _default_upper_type = value; } }
+        double _default_upper_bound = 0.0;
+        [XmlIgnore, Description("If the trade entities file is not found, then this is the default upper bounds value."), Category("Trade Values")]
+        public double DefaultUpperBoundsValue { get { return _default_upper_bound; } set { _default_upper_bound = value; } }
+
+        ValueScaleType _default_lower_type = ValueScaleType.Unset;
+        [XmlIgnore, Description("If the trade entities file is not found, then this is the default lower bounds value type."), Category("Trade Values")]
+        public ValueScaleType DefaultLowerBoundsType { get { return _default_lower_type; } set { _default_lower_type = value; } }
+        double _default_lower_bound = 0.0;
+        [XmlIgnore, Description("If the trade entities file is not found, then this is the default lower bounds value."), Category("Trade Values")]
+        public double DefaultLowerBoundsValue { get { return _default_lower_bound; } set { _default_lower_bound = value; } }
+        #endregion        //opt filename
+
+        private string _trade_entity_name = "broker";
+        [Description("The Entity Name to use for the broker plugin."), Category("Trade Values")]
+        public string TradeEntityName { set { _trade_entity_name = value; } get { return (_trade_entity_name); } }
+
+        private string _trade_entity_fname = string.Empty;
+        [Description("The Trade Entities file name. If specified, this file contains the default and specific trading values that will be used."), Category("Trade Values"), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
+        public string TradeEntityFileName { set { _trade_entity_fname = value; } get { return (_trade_entity_fname); } }
+
+        #endregion
+        
+        #region account values data file options
+        private bool _use_account_values = true;
+        [Description("If enabled, the broker will write all relevant account values for all accounts to the data file when an account value request is received from RightEdge."), Category("Account Values"), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
+        public bool AccountValuesEnabled { get { return _use_account_values; } set { _use_account_values = value; } }
+
+        private string _account_values_fname = string.Empty;
+        [Description("The file name for the account values data."), Category("Account Values"), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
+        public string AccountValuesFileName { set { _account_values_fname = value; } get { return (_account_values_fname); } }
+        #endregion
 
         #region fxclient options
         private string _fxclient_log_fname = "C:\\fxclient.log";
-        [Description("Set this to the file name for the internal fxClientAPI logging."), Category("Logging, FXClient"), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor))]
+        [Description("Set this to the file name for the internal fxClientAPI logging."), Category("Logging, FXClient"), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
         public string FXClientLogFileName { set { _fxclient_log_fname = value; } get { return (_fxclient_log_fname); } }
 
         private bool _log_fxclient = false;
@@ -1133,22 +1478,14 @@ namespace RightEdgeOandaPlugin
         public bool LogFXClientEnabled { set { _log_fxclient = value; } get { return (_log_fxclient); } }
         #endregion
 
-        private OAPluginLogOptions _broker_log_opt= new OAPluginLogOptions("c:\\broker.log");
-        [Description(""), Category("Logging, Broker")]
-        public OAPluginLogOptions LogOptionsBroker {set{_broker_log_opt = value;}get {return(_broker_log_opt);}}
+        private OAPluginLogOptions _broker_log_opt = new OAPluginLogOptions("c:\\broker.log");
+        [Description("Logging options for the broker component."), Category("Logging, Broker")]
+        public OAPluginLogOptions LogOptionsBroker { set { _broker_log_opt = value; } get { return (_broker_log_opt); } }
 
         #region broker options
         private bool _use_game = true;
         [Description("Set this to true for fxGame, if false fxTrade will be used."), Category("Broker Options")]
         public bool GameServerEnabled { set { _use_game = value; } get { return (_use_game); } }
-
-        private bool _use_bounds = true;
-        [Description("Set this to true to enable order bounds"), Category("Broker Options")]
-        public bool Bounds { set { _use_bounds = value; } get { return (_use_bounds); } }
-
-        private double _bounds = 0.0;
-        [Description("Set this to the full slip-able range size."), Category("Broker Options")]
-        public double BoundsValue { set { _bounds = value; } get { return (_bounds); } }
 
         private string _order_log_fname = "C:\\orders.xml";
         [Description("Set this to the file name for storing order information."), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor)), Category("Broker Options")]
@@ -1181,9 +1518,9 @@ namespace RightEdgeOandaPlugin
         #endregion
         #endregion
 
-        private OAPluginLogOptions _tick_log_opt= new OAPluginLogOptions("c:\\tick.log");
-        [Description(""), Category("Logging, Tick")]
-        public OAPluginLogOptions LogOptionsTick {set{_tick_log_opt = value;}get {return(_tick_log_opt);}}
+        private OAPluginLogOptions _tick_log_opt = new OAPluginLogOptions("c:\\tick.log");
+        [Description("Logging options for the live data component."), Category("Logging, Tick")]
+        public OAPluginLogOptions LogOptionsTick { set { _tick_log_opt = value; } get { return (_tick_log_opt); } }
 
         #region tick logging options
         private bool _log_ticks = false;
@@ -1191,9 +1528,9 @@ namespace RightEdgeOandaPlugin
         public bool LogTicks { set { _log_ticks = value; } get { return (_log_ticks); } }
         #endregion
 
-        private OAPluginLogOptions _hist_log_opt= new OAPluginLogOptions("c:\\history.log");
-        [Description(""), Category("Logging, History")]
-        public OAPluginLogOptions LogOptionsHistory {set{_hist_log_opt = value;}get {return(_hist_log_opt);}}
+        private OAPluginLogOptions _hist_log_opt = new OAPluginLogOptions("c:\\history.log");
+        [Description("Logging options for the historic data component."), Category("Logging, History")]
+        public OAPluginLogOptions LogOptionsHistory { set { _hist_log_opt = value; } get { return (_hist_log_opt); } }
 
         #region history filtering options
         private DataFilterType _data_filter_type = DataFilterType.WeekendTimeFrame;
@@ -1265,10 +1602,11 @@ namespace RightEdgeOandaPlugin
         }
     }
     #endregion
-    
+
     public class fxClientWrapper
     {
-        public fxClientWrapper() { }
+        private OandAPlugin _parent;
+        public fxClientWrapper(OandAPlugin p) { _parent = p; }
 
         //account listeners will connect to the _in client
         //in case the out channel disconnects due to an Oanda Exception
@@ -1298,19 +1636,25 @@ namespace RightEdgeOandaPlugin
 
         private string _user = string.Empty;
         private string _pw = string.Empty;
+        private bool _is_restart = false;
 
         public FXClientResult Connect(ServiceConnectOptions connectOptions, string u, string pw)
         {
-            if (connectOptions == ServiceConnectOptions.Broker)
-            { _log.captureDebug("Connect() called.\n--------------------"); }
+            if (!_is_restart)
+            {
+                _log.captureDebug("--------------- { RightEdge Oanda Plugin Version ("+ OandAUtils.PluginVersion() +") } ---------------");
+                _is_restart = true;
+            }
+            
+            _log.captureDebug("Connect() called.");
 
             _user = u;
             _pw = pw;
 
-            FXClientResult res = connectIn(connectOptions);
+            FXClientResult res = connectIn(connectOptions,_is_restart);
             if (res.Error) { return res; }
 
-            if(connectOptions == ServiceConnectOptions.Broker)
+            if (connectOptions == ServiceConnectOptions.Broker)
             { res = connectOut(); }
 
             return res;
@@ -1322,9 +1666,11 @@ namespace RightEdgeOandaPlugin
 
             try
             {
+                if (_watchdog_thread != null) { stopDataWatchdog(); }
+
                 if (_fx_client_in.IsLoggedIn)
                 {
-                    _fx_client_in.Logout();
+                    _fx_client_in.Logout();//FIX ME <--- this can hang indefinitely....
                 }
                 _fx_client_in.Destroy();
                 _fx_client_in = null;
@@ -1349,8 +1695,22 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
-        
-        private FXClientResult connectIn(ServiceConnectOptions connectOptions)
+
+
+        private int _watchdog_restart_attempt_count = 0;
+        private int _watchdog_restart_attempt_threshold = 3;
+
+        private int _watchdog_restart_complete_count = 0;
+        private int _watchdog_restart_complete_threshold = 15;
+
+        private int _watchdog_restart_delay = 10;
+        private int _watchdog_min_time_to_sleep = 10;
+        private int _watchdog_max_time_to_sleep = 120;
+
+        private Thread _watchdog_thread = null;
+
+
+        private FXClientResult connectIn(ServiceConnectOptions connectOptions,bool is_restart)
         {
             FXClientResult res = new FXClientResult();
 
@@ -1365,12 +1725,15 @@ namespace RightEdgeOandaPlugin
 
             bool wrt = false;
             bool wka = false;
+            bool start_data_watchdog = false;
             switch (connectOptions)
             {
                 case ServiceConnectOptions.Broker:
                     wka = true;
+                    wrt = false;
                     break;
                 case ServiceConnectOptions.LiveData:
+                    start_data_watchdog = !is_restart;
                     wka = true;
                     wrt = true;
                     break;
@@ -1393,6 +1756,7 @@ namespace RightEdgeOandaPlugin
                 res.setError("contact oanda when ready to turn on live", FXClientResponseType.Rejected, true);
                 return res;
             }
+            _log.captureDebug("Using fxClient version : (" + _fx_client_in.Version + ")");
 
             if (_opts.LogFXClientEnabled)
             {
@@ -1404,6 +1768,8 @@ namespace RightEdgeOandaPlugin
                 _fx_client_in.WithRateThread = wrt;
                 _fx_client_in.WithKeepAliveThread = wka;
                 _fx_client_in.Login(_user, _pw);
+
+                if (start_data_watchdog) { startDataWatchdog(); }
                 return res;
             }
             catch (SessionException oase)
@@ -1445,7 +1811,7 @@ namespace RightEdgeOandaPlugin
             {
                 _fx_client_out = new fxTrade();
 
-                res.setError("contact oanda when ready to turn on live",FXClientResponseType.Rejected,true);
+                res.setError("contact oanda when ready to turn on live", FXClientResponseType.Rejected, true);
                 return res;
             }
 
@@ -1456,7 +1822,7 @@ namespace RightEdgeOandaPlugin
 
             try
             {
-                _fx_client_out.WithRateThread = false;
+                _fx_client_out.WithRateThread = true;//need rate table to query rates for non-local price conversions
                 _fx_client_out.WithKeepAliveThread = true;
                 _fx_client_out.Login(_user, _pw);
                 return res;
@@ -1464,25 +1830,25 @@ namespace RightEdgeOandaPlugin
             catch (SessionException oase)
             {
                 _log.captureException(oase);
-                res.setError("session exception : " + oase.Message,FXClientResponseType.Disconnected,true);
+                res.setError("session exception : " + oase.Message, FXClientResponseType.Disconnected, true);
                 return res;
             }
             catch (OAException oae)
             {
                 _log.captureException(oae);
-                res.setError("login failed : " + oae.Message,FXClientResponseType.Rejected,true);
+                res.setError("login failed : " + oae.Message, FXClientResponseType.Rejected, true);
                 return res;
             }
             catch (Exception e)
             {
                 _log.captureException(e);
-                res.setError("Unhandled exception : " + e.Message,FXClientResponseType.Rejected, !_fx_client_out.IsLoggedIn);
+                res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, !_fx_client_out.IsLoggedIn);
                 return res;
             }
         }
-        
 
-        public FXClientResult SetWatchedSymbols(List<RateTicker> rate_tickers, List<Symbol> symbols,OandAPlugin parent)
+
+        public FXClientResult SetWatchedSymbols(List<RateTicker> rate_tickers, List<Symbol> symbols, OandAPlugin parent)
         {
             FXClientResult res = new FXClientResult();
             fxEventManager em;
@@ -1545,17 +1911,132 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
-        public FXClientObjectResult<ArrayList> GetHistory(fxPair fxPair, Interval interval, int num_ticks)
+        private void startDataWatchdog()
         {
-            FXClientObjectResult<ArrayList> res = new FXClientObjectResult<ArrayList>();
+            _watchdog_thread = new Thread(new ThreadStart(watchdogMain));
+            _watchdog_thread.Name = "LiveDataWatchdog";
+            _watchdog_thread.Start();
+        }
+
+        private object _lock = new object();
+
+        private void watchdogMain()
+        {
+            bool is_logged_in = false;
+            int time_to_sleep = 0;
+            bool have_lock = false;
             try
             {
-                if (!_fx_client_in.WithRateThread)
+                do
+                {
+                    time_to_sleep = _watchdog_min_time_to_sleep + (_watchdog_restart_attempt_count * _watchdog_restart_delay);
+                    if (time_to_sleep > _watchdog_max_time_to_sleep) { time_to_sleep = _watchdog_max_time_to_sleep; }
+
+                    Thread.Sleep(new TimeSpan(0, 0, time_to_sleep));
+
+                    if (!Monitor.TryEnter(_lock, 2000))
+                    {
+                        _log.captureError("Unable to acquire lock on fxClientWrapper lock object", "watchdogMain Error");
+                        return;
+                    }
+                    have_lock = true;
+
+                    is_logged_in = _fx_client_in.IsLoggedIn;
+
+                    if (!is_logged_in)
+                    {
+                        _watchdog_restart_attempt_count++;
+                        _log.captureError("Watchdog found data stream was not logged in. Attempting to restart ('" + _watchdog_restart_attempt_count + "')...", "watchdogMain Error");
+
+                        if (_watchdog_restart_attempt_count > _watchdog_restart_attempt_threshold)
+                        {
+                            _log.captureError("Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" + _watchdog_restart_attempt_threshold + "'.", "watchdogMain Error");
+                            if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
+                            return;
+                        }
+
+                        //store watched symbols...
+                        List<Symbol> syms = new List<Symbol>();
+                        foreach (RateTicker rt in _parent.RateTickers)
+                        {
+                            syms.Add(rt.Symbol);
+                        }
+
+                        FXClientResult fxres = connectIn(ServiceConnectOptions.LiveData, true);
+                        if (fxres.Error)
+                        {
+                            _log.captureError("Watchdog reconnect error : " + fxres.Message, "watchdogMain Error");
+                            if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
+                            return;
+                        }
+
+                        if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
+
+                        //reload watched symbols...
+                        if (!_parent.SetWatchedSymbols(syms))
+                        {//_parent will log errors...
+                            if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
+                            return;
+                        }
+
+                        _watchdog_restart_complete_count++;
+                        if (_watchdog_restart_complete_count > _watchdog_restart_complete_threshold)
+                        {
+                            _log.captureDebug("Watchdog restarts '" + _watchdog_restart_complete_count + "' exceed threshold '" + _watchdog_restart_complete_threshold + "'. Your connection is unstable!");
+                        }
+                        else
+                        {
+                            _log.captureDebug("Watchdog restarted connection.");
+                        }
+                        _watchdog_restart_attempt_count = 0;
+                    }
+                    else
+                    {
+                        _log.captureDebug("Watchdog determined connection is ok.");
+                    }
+
+                    if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
+                } while (true);
+            }
+            catch (ThreadAbortException)
+            {
+                //stopping watchdog...
+            }
+            catch (Exception e)
+            {
+                _log.captureError("Watchdog exception : " + e.Message, "watchdogMain Error");
+            }
+            finally
+            {
+                if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
+            }
+        }
+        private FunctionResult stopDataWatchdog()
+        {
+            int jto = 10000;
+            if (_watchdog_thread == null) { return new FunctionResult(); }
+            if (_watchdog_thread.IsAlive) { _watchdog_thread.Abort(); }
+            if (!_watchdog_thread.Join(jto))
+            {
+                _watchdog_thread = null;
+                return FunctionResult.newError("Unable to join watchdog thread on shutdown.");
+            }
+            _watchdog_thread = null;
+            return new FunctionResult();
+        }
+        
+        public FXClientObjectResult<ArrayList> GetHistory(fxPair fxPair, Interval interval, int num_ticks,bool use_in_channel)
+        {
+            FXClientObjectResult<ArrayList> res = new FXClientObjectResult<ArrayList>();
+            fxClient fx_client = use_in_channel ? _fx_client_in : _fx_client_out;
+            try
+            {
+                if (!fx_client.WithRateThread)
                 {
                     res.setError("fx client has no rate table.", FXClientResponseType.Disconnected, false);
                     return res;
                 }
-                res.ResultObject = _fx_client_in.RateTable.GetHistory(fxPair, interval, num_ticks);
+                res.ResultObject = fx_client.RateTable.GetHistory(fxPair, interval, num_ticks);
                 if (res.ResultObject == null)
                 {
                     res.setError("Unable to fetch history.", FXClientResponseType.Invalid, false);
@@ -1582,8 +2063,81 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
-        
-        public FXClientObjectResult<Fill> GenerateFillFromTransaction(Transaction trans, string base_currency)
+
+        private FXClientObjectResult<double> determineRate(bool is_buy, DateTime timestamp, string base_cur, string quote_cur)
+        {
+            FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+            string b_sym = base_cur + "/" + quote_cur;
+            fxPair b_pair = new fxPair(b_sym);
+
+            TimeSpan time_to_order = DateTime.UtcNow.Subtract(timestamp);
+            int ticks_to_trans = (time_to_order.Seconds % 5) + 1;
+            if (ticks_to_trans <= 0) { ticks_to_trans = 1; }//always try to get at least 1 tick...
+
+            ArrayList b_rates;
+            try
+            {
+                
+
+                //***************
+                //FIX ME - it would be much more efficient to store some of these rates for a few minutes after a lookup.
+                //         checking the stored values first for a match, and only resolving via the rate table or history as needed.
+
+                /////////////////////
+                //if the timestamp is within 5 sec of now, just get the rate...
+                //{
+                #region rate resolution via rate table
+                //fxTick b_tick = fx_client.RateTable.GetRate(b_pair);
+                #endregion
+                //}
+                //else
+                //{
+                #region rate resolution via history
+                _log.captureDebug("determineRate needs history for sym='" + b_sym + "' tick count='" + ticks_to_trans + "'");
+
+                //array of fxHistoryPoints
+                FXClientObjectResult<ArrayList> hres=GetHistory(b_pair, Interval.Every_5_Seconds, ticks_to_trans,false);
+                if(hres.Error)
+                {
+                    res.setError(hres.Message,hres.FXClientResponse,hres.Disconnected);
+                    return res;
+                }
+
+                b_rates = hres.ResultObject;
+
+                int n;
+                if (b_rates.Count < ticks_to_trans)
+                {
+                    _log.captureDebug("not enough history to get the real transaction timestamp rate, using last available tick instead.");
+                    n = b_rates.Count - 1;
+                }
+                else
+                {
+                    n = ticks_to_trans - 1;
+                }
+                fxHistoryPoint hp = (fxHistoryPoint)b_rates[n];
+                double b_ask=(hp.Open.Ask + hp.Close.Ask) / 2.0;
+                double b_bid=(hp.Open.Bid + hp.Close.Bid) / 2.0;
+                double trans_pr = is_buy ? b_ask : b_bid;
+                res.ResultObject = trans_pr;
+                _log.captureDebug("history point results pair='" + b_pair + "' timstamp='" + hp.Timestamp + "' avg BA (" + b_bid + "," + b_ask + ") is_buy='" + is_buy + "' trans_pr='" + trans_pr + "'");
+                return res;
+                #endregion
+                //} end of rate vs history 'if', else statement
+                /////////////////////
+                //***************
+
+            }
+            catch (OAException oae)
+            {
+                _log.captureException(oae);
+                res.setError("Oanda Exception : " + oae.Message);
+                return res;
+            }
+
+        }
+
+        public FXClientObjectResult<Fill> GenerateFillFromTransaction(Transaction trans, string act_currency)
         {
             FXClientObjectResult<Fill> res = new FXClientObjectResult<Fill>();
             if (!IsInit)
@@ -1599,31 +2153,121 @@ namespace RightEdgeOandaPlugin
             double act_pr = 1.0;
 
             // Symbol : Base/Quote
-            if (trans.Base == base_currency)
+            if (trans.Base == act_currency)
             {
                 act_pr = 1.0 / sym_pr;
             }
-            else if (trans.Quote != base_currency)
+            else if (trans.Quote != act_currency)
             {//neither the Base nor the Quote is the base_currency
+                bool found=false;
+                double b_pr;
+                FXClientObjectResult<double> b_res = null;
 
-                //determine a Base/base_currency and/or Quote/base_currency cross price factor
-                double b_pr = OandAUtils.determineRate(_fx_client_in, trans.IsBuy(), trans.Timestamp, trans.Base, base_currency);
-                double q_pr = OandAUtils.determineRate(_fx_client_in, trans.IsBuy(), trans.Timestamp, trans.Quote, base_currency);
+                if (!found) //determine Quote/act_currency cross price factor
+                {
+                    b_res = determineRate(trans.IsBuy(), trans.Timestamp, trans.Quote, act_currency);
+                    if (!b_res.Error)
+                    {
+                        b_pr = b_res.ResultObject;
+                        act_pr = b_pr;
+                        found = true;
+                        _log.captureDebug("converted sym price {" + trans.Base + "/" + trans.Quote + ":" + sym_pr + "} to account price {" + trans.Quote + "/" + act_currency + ":" + act_pr + "} using the cross lookup {" + trans.Quote + "/" + act_currency + " : " + b_pr + "}");
+                    }
+                    else
+                    {
+                        _log.captureDebug("determineRate error : " + b_res.Message);
+                    }
+                    if (b_res.Disconnected)
+                    {
+                        FXClientResult fxres=connectOut();
+                        if (fxres.Error)
+                        { res.setError("Unable to reconnect : " + fxres.Message, fxres.FXClientResponse, fxres.Disconnected); return res; }
+                    }
+                }
 
-                //FIX ME - convert act_pr using the cross factor
-                throw new NotImplementedException("FIX ME - convert act_pr using the cross factor");
+                if (!found) //determine act_currency/Quote cross price factor
+                {
+                    b_res = determineRate(trans.IsBuy(), trans.Timestamp, act_currency, trans.Quote);
+                    if (!b_res.Error)
+                    {
+                        b_pr = b_res.ResultObject;
+                        act_pr = (1.0 / b_pr);
+                        found = true;
+                        _log.captureDebug("converted sym price {" + trans.Base + "/" + trans.Quote + ":" + sym_pr + "} to account price {" + trans.Quote + "/" + act_currency + ":" + act_pr + "} using the cross lookup {" + act_currency + "/" + trans.Quote + " : " + b_pr + "}");
+                    }
+                    else
+                    {
+                        _log.captureDebug("determineRate error : " + b_res.Message);
+                    }
+                    if (b_res.Disconnected)
+                    {
+                        FXClientResult fxres = connectOut();
+                        if (fxres.Error)
+                        { res.setError("Unable to reconnect : " + fxres.Message, fxres.FXClientResponse, fxres.Disconnected); return res; }
+                    }
+
+                }
+                
+                if (!found) //determine a Base/act_currency cross price factor
+                {
+                    b_res = determineRate(trans.IsBuy(), trans.Timestamp, trans.Base, act_currency);
+                    if (!b_res.Error)
+                    {
+                        b_pr = b_res.ResultObject;
+                        act_pr = (1.0 / sym_pr) * b_pr;
+                        found = true;
+                        _log.captureDebug("converted sym price {" + trans.Base + "/" + trans.Quote + ":" + sym_pr + "} to account price {" + trans.Quote + "/" + act_currency + ":" + act_pr + "} using the cross factor {" + trans.Base + "/" + act_currency + " : " + b_pr + "}");
+                    }
+                    else
+                    {
+                        _log.captureDebug("determineRate error : " + b_res.Message);
+                    }
+                    if (b_res.Disconnected)
+                    {
+                        FXClientResult fxres = connectOut();
+                        if (fxres.Error)
+                        { res.setError("Unable to reconnect : " + fxres.Message, fxres.FXClientResponse, fxres.Disconnected); return res; }
+                    }
+                }
+
+                if (!found) //determine act_currency/Base cross price factor
+                {
+                    b_res = determineRate(trans.IsBuy(), trans.Timestamp, act_currency, trans.Base);
+                    if (!b_res.Error)
+                    {
+                        b_pr = b_res.ResultObject;
+                        act_pr = 1.0 / (b_pr * sym_pr);
+                        found = true;
+                        _log.captureDebug("converted sym price {" + trans.Base + "/" + trans.Quote + ":" + sym_pr + "} to account price {" + trans.Quote + "/" + act_currency + ":" + act_pr + "} using the cross factor {" + act_currency + "/" + trans.Base + " : " + b_pr + "}");
+                    }
+                    else
+                    {
+                        _log.captureDebug("determineRate error : " + b_res.Message);
+                    }
+                    if (b_res.Disconnected)
+                    {
+                        FXClientResult fxres = connectOut();
+                        if (fxres.Error)
+                        { res.setError("Unable to reconnect : " + fxres.Message, fxres.FXClientResponse, fxres.Disconnected); return res; }
+                    }
+                }
+
+                if (!found)
+                {//error
+                    res.setError("Unable to locate a suitable cross factor currency and/or price. " + b_res.Message, b_res.FXClientResponse, b_res.Disconnected);
+                    return res;
+                }
             }
-            //else (trans.Quote == base_currency)
+            //else (trans.Quote == base_currency) act_pr = 1.0
 
             fill.Price = new Price(sym_pr, act_pr);
-
             fill.Quantity = (trans.Units < 0) ? (-1 * trans.Units) : trans.Units;
-            
             res.ResultObject = fill;
             return res;
         }
 
         private bool outChannelIsInit { get { return (_fx_client_out != null && _fx_client_out.IsLoggedIn); } }
+
 
         public FXClientObjectResult<AccountResult> ConvertStringToAccount(string p)
         {
@@ -1745,6 +2389,8 @@ namespace RightEdgeOandaPlugin
             FXClientResult res = new FXClientResult();
             try
             {
+                _log.captureDebug("ERASEME LATER : Account values [currency=" + acct.HomeCurrency + " balance=" + acct.Balance.ToString() + "{margin: rate=" + acct.MarginRate.ToString() + " available=" + acct.MarginAvailable() + " used=" + acct.MarginUsed() + "}]");
+                
                 fxEventManager em = acct.GetEventManager();
 
                 if (!em.add(ar))
@@ -1778,18 +2424,18 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
-        
+
         public FXClientObjectResult<MarketOrder> GetTradeWithID(int act_id, int trade_id)
         {
             FXClientObjectResult<MarketOrder> res;
             FXClientObjectResult<AccountResult> ares = ConvertStringToAccount(act_id.ToString());
-            if(ares.Error)
+            if (ares.Error)
             {
                 res = new FXClientObjectResult<MarketOrder>();
-                res.setError(ares.Message,ares.FXClientResponse,ares.Disconnected);
+                res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
                 return res;
             }
-            return GetTradeWithID(ares.ResultObject.FromOutChannel,trade_id);
+            return GetTradeWithID(ares.ResultObject.FromOutChannel, trade_id);
         }
         public FXClientObjectResult<MarketOrder> GetTradeWithID(Account acct, int trade_id)
         {
@@ -1798,7 +2444,7 @@ namespace RightEdgeOandaPlugin
             try
             {
                 MarketOrder mo = new MarketOrder();
-                if (! outChannelIsInit)
+                if (!outChannelIsInit)
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error)
@@ -1853,7 +2499,7 @@ namespace RightEdgeOandaPlugin
         {
             FXClientObjectResult<LimitOrder> res;
             FXClientObjectResult<AccountResult> ares = ConvertStringToAccount(act_id.ToString());
-            if(ares.Error)
+            if (ares.Error)
             {
                 res = new FXClientObjectResult<LimitOrder>();
                 res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
@@ -2165,6 +2811,7 @@ namespace RightEdgeOandaPlugin
             }
         }
 
+   
         public FXClientObjectResult<double> GetMarginAvailable(Account account)
         {
             FXClientObjectResult<double> res = new FXClientObjectResult<double>();
@@ -2208,6 +2855,217 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
+        public FXClientObjectResult<double> GetMarginUsed(Account account)
+        {
+            FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+            try
+            {
+                if (!outChannelIsInit)
+                {
+                    FXClientResult cres = connectOut();
+                    if (cres.Error)
+                    {
+                        res.setError(cres.Message, cres.FXClientResponse, cres.Disconnected);
+                        return res;
+                    }
+                }
+
+                res.ResultObject = account.MarginUsed();
+                return res;
+            }
+            catch (SessionException oase)
+            {
+                _broker_log.captureException(oase);
+                res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
+                return res;
+            }
+            catch (AccountException ae)
+            {
+                _broker_log.captureException(ae);
+                res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
+                return res;
+            }
+            catch (OAException oae)
+            {
+                _broker_log.captureException(oae);
+                res.setError("Oanda General Exception : {" + oae.Code + "} " + oae.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+            catch (Exception e)
+            {
+                _broker_log.captureException(e);
+                res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+        }
+        public FXClientObjectResult<double> GetMarginRate(Account account)
+        {
+            FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+            try
+            {
+                if (!outChannelIsInit)
+                {
+                    FXClientResult cres = connectOut();
+                    if (cres.Error)
+                    {
+                        res.setError(cres.Message, cres.FXClientResponse, cres.Disconnected);
+                        return res;
+                    }
+                }
+
+                res.ResultObject = account.MarginRate;
+                return res;
+            }
+            catch (SessionException oase)
+            {
+                _broker_log.captureException(oase);
+                res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
+                return res;
+            }
+            catch (AccountException ae)
+            {
+                _broker_log.captureException(ae);
+                res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
+                return res;
+            }
+            catch (OAException oae)
+            {
+                _broker_log.captureException(oae);
+                res.setError("Oanda General Exception : {" + oae.Code + "} " + oae.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+            catch (Exception e)
+            {
+                _broker_log.captureException(e);
+                res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+        }
+        public FXClientObjectResult<double> GetBalance(Account a)
+        {
+            FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+            try
+            {
+                if (!outChannelIsInit)
+                {
+                    FXClientResult cres = connectOut();
+                    if (cres.Error)
+                    {
+                        res.setError(cres.Message, cres.FXClientResponse, cres.Disconnected);
+                        return res;
+                    }
+                }
+
+                res.ResultObject = a.Balance;
+                return res;
+            }
+            catch (SessionException oase)
+            {
+                _broker_log.captureException(oase);
+                res.setError("Oanda Session Exception : {" + oase.Code + "} " + oase.Message, FXClientResponseType.Disconnected, false);
+                return res;
+            }
+            catch (AccountException ae)
+            {
+                _broker_log.captureException(ae);
+                res.setError("Oanda Account Exception : {" + ae.Code + "} " + ae.Message, FXClientResponseType.Invalid, false);
+                return res;
+            }
+            catch (OAException oae)
+            {
+                _broker_log.captureException(oae);
+                res.setError("Oanda General Exception : {" + oae.Code + "} " + oae.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+            catch (Exception e)
+            {
+                _broker_log.captureException(e);
+                res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+        }
+
+        public FXClientObjectResult<List<AccountResult>> GetFullAccountsList()
+        {
+            List<AccountResult> act_list = new List<AccountResult>();
+            FXClientObjectResult<List<AccountResult>> res = new FXClientObjectResult<List<AccountResult>>();
+
+            try
+            {
+                if (!_fx_client_in.IsLoggedIn)
+                {
+                    res.setError("Broker is not connected!", FXClientResponseType.Disconnected, true);
+                    return res;
+                }
+
+                ArrayList in_alist = _fx_client_in.User.GetAccounts();
+                foreach (Account a in in_alist)
+                {
+                    AccountResult ar = new AccountResult();
+                    ar.FromInChannel = a;
+                    act_list.Add(ar);
+                }
+
+                //check the connection on the out channel...
+                if (!outChannelIsInit)
+                {
+                    FXClientResult cres = connectOut();
+                    if (cres.Error)
+                    {
+                        res.setError(cres.Message, cres.FXClientResponse, cres.Disconnected);
+                        return res;
+                    }
+                }
+
+                ArrayList out_alist = _fx_client_out.User.GetAccounts();
+
+                if (out_alist.Count != act_list.Count)
+                {//account list mismatch
+                    res.setError("The input and output channel account count mismatch. in{" + act_list.Count + "} != out{" + out_alist.Count + "}");
+                    return res;
+                }
+
+                for (int i = 0; i < out_alist.Count; i++)
+                {
+                    Account a = (Account)out_alist[i];
+
+                    Account ina = act_list[i].FromInChannel;
+                    if (ina == null)
+                    {
+                        res.setError("AccountResult list element missing Account object.");
+                        return res;
+                    }
+                    if (ina.AccountId != a.AccountId)
+                    {//account lists are in different orders...
+                        res.setError("Account lists are in different orders on the channels....need to implement a better match algorythm...");
+                        return res;
+                    }
+                    act_list[i].FromOutChannel = a;
+                }
+
+                res.ResultObject = act_list;
+                return res;
+            }
+            catch (SessionException se)
+            {
+                _broker_log.captureException(se);
+                res.setError("Oanda Session Exception : " + se.Message,FXClientResponseType.Disconnected,false);
+                return res;
+            }
+            catch (AccountException ae)
+            {
+                _broker_log.captureException(ae);
+                res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
+                return res;
+            }
+            catch (OAException oae)
+            {
+                _broker_log.captureException(oae);
+                res.setError("Oanda General Exception : " + oae.Message, FXClientResponseType.Rejected, false);
+                return res;
+            }
+        }
+
     }
 
     public class ResponseProcessor
@@ -2369,6 +3227,34 @@ namespace RightEdgeOandaPlugin
             }
         }
 
+        public FXClientTaskResult ActivateAccountResponder(Account acct)
+        {
+            FXClientTaskResult res = new FXClientTaskResult();
+            int aid = acct.AccountId;
+
+            if (_account_responders.ContainsKey(aid))
+            {
+                if (!_account_responders[aid].Active)
+                {
+                    _account_responders[aid].Active = true;
+                    res.TaskCompleted = true;
+                    return res;
+                }
+                return res;
+            }
+
+            AccountResponder ar = new AccountResponder(aid, acct.HomeCurrency, _parent);
+            FXClientResult addres = _parent.fxClient.AddAccountEventResponder(acct, ar);
+            if (addres.Error)
+            {
+                res.setError(addres.Message, addres.FXClientResponse, addres.Disconnected);
+                return res;
+            }
+
+            _account_responders.Add(aid, ar);
+            res.TaskCompleted = true;
+            return res;
+        }
         public FXClientTaskResult ActivateAccountResponder(int aid)
         {
             FXClientTaskResult res = new FXClientTaskResult();
@@ -2391,19 +3277,10 @@ namespace RightEdgeOandaPlugin
             }
 
             Account acct = ares.ResultObject.FromInChannel;
-
-            AccountResponder ar = new AccountResponder(aid, acct.HomeCurrency, _parent);
-            FXClientResult addres = _parent.fxClient.AddAccountEventResponder(acct, ar);
-            if (addres.Error)
-            {
-                res.setError(addres.Message, addres.FXClientResponse, addres.Disconnected);
-                return res;
-            }
-
-            _account_responders.Add(aid, ar);
-            res.TaskCompleted = true;
-            return res;
+            return ActivateAccountResponder(acct);
         }
+
+
         public void DeactivateAccountResponder(int aid)
         {
             if (_account_responders.ContainsKey(aid))
@@ -2455,7 +3332,7 @@ namespace RightEdgeOandaPlugin
         public override bool Equals(object obj)
         {
             if (System.Object.ReferenceEquals(this, obj)) { return true; }
-            if (! (obj is IDString)) { return false; }
+            if (!(obj is IDString)) { return false; }
             return Equals((IDString)obj);
         }
         public bool Equals(IDString obj)
@@ -2546,8 +3423,8 @@ namespace RightEdgeOandaPlugin
     [Serializable]
     public class ResponseRecord
     {
-        public ResponseRecord(Transaction trans,int aid, string cur) { _act_id = aid; _trans = trans; _base_currency = cur; }
-        public ResponseRecord(){}
+        public ResponseRecord(Transaction trans, int aid, string cur) { _act_id = aid; _trans = trans; _base_currency = cur; }
+        public ResponseRecord() { }
 
         private int _act_id = 0;
         public int AccountId { set { _act_id = value; } get { return (_act_id); } }
@@ -2559,27 +3436,144 @@ namespace RightEdgeOandaPlugin
         public string BaseCurrency { get { return (_base_currency); } }
 
         private Transaction _trans = null;
-        public Transaction Transaction {set{_trans=value;}get{return (_trans);}}
+        public Transaction Transaction { set { _trans = value; } get { return (_trans); } }
+    }
+
+    public class FillList
+    {
+        private List<FillRecord> _list = new List<FillRecord>();
+        public List<FillRecord> List { get { return (_list); } }
+        private int _linkless_count = 0;
+        public int LinklessCount { get { return (_linkless_count); } }
+
+        public void IncreaseLinklessCount()
+        {
+            _linkless_count++;
+        }
+        public void DecreaseLinklessCount()
+        {
+            _linkless_count--;
+        }
     }
 
     [Serializable]
     public class FillRecord
     {
         public FillRecord() { }
-        public FillRecord(Fill f, string n_id) { _fill = f; _id = n_id; }
+        public FillRecord(Fill f, string n_id, string l_id) { _fill = f; _id = n_id; _link_id = l_id; }
 
         private Fill _fill = null;
         public Fill Fill { set { _fill = value; } get { return (_fill); } }
 
         private string _id = null;
         public string Id { set { _id = value; } get { return (_id); } }
+        private string _link_id = null;
+        public string LinkId { set { _link_id = value; } get { return (_link_id); } }
+    }
+
+    public class FillQueue
+    {
+        private RightEdgeOandaPlugin.SerializableDictionary<string, FillList> _queues = new RightEdgeOandaPlugin.SerializableDictionary<string, FillList>();
+
+        public void AddNewFillRecord(string pair, Fill fill, int id, int link)
+        {
+            if (!_queues.ContainsKey(pair))
+            {
+                _queues[pair] = new FillList();
+            }
+            _queues[pair].List.Add(new FillRecord(fill, id.ToString(), link.ToString()));
+            if (link == 0) { _queues[pair].IncreaseLinklessCount(); }
+        }
+
+
+        public FunctionObjectResult<FillRecord> FindOpenFill(string sym, string id, int units, PluginLog log)
+        {
+            FunctionObjectResult<FillRecord> res = new FunctionObjectResult<FillRecord>();
+            
+            //to match an unfilled limit order, look for the fill record with a 0 link (if more than 1, it's an error)
+            FillList fill_queue;
+            if (!_queues.TryGetValue(sym, out fill_queue))
+            {
+                res.setError("No fill queue found for symbol '" + sym + "'");
+                return res;
+            }
+
+            if (fill_queue.LinklessCount == 0)
+            {
+                if (fill_queue.List.Count != 1)
+                {
+                    res.setError("No linkless fills, but multiple fill records in queue for symbol '" + sym + "'");
+                    return res;
+                }
+                FillRecord fr = fill_queue.List[0];
+                log.captureDebug("      only fill {id=" + fr.Id + ",link=" + fr.LinkId + "} qty='" + fr.Fill.Quantity + "'");
+                log.captureDebug("        using this fill");
+                fill_queue.List.Remove(fr);
+                fill_queue.DecreaseLinklessCount();
+                if (fill_queue.List.Count == 0) { _queues.Remove(sym); }
+
+                res.ResultObject = fr;
+                return res;
+            }
+
+            if (fill_queue.LinklessCount != 1)
+            {
+                res.setError("Wrong linkless fill count for symbol '" + sym + "' count='" + fill_queue.LinklessCount + "'");
+                return res;
+            }
+
+            foreach (FillRecord fr in fill_queue.List)
+            {
+                log.captureDebug("      checking fill {id=" + fr.Id + ",link=" + fr.LinkId + "} qty='" + fr.Fill.Quantity + "'");
+
+                if (fr.LinkId == "0")
+                {
+                    log.captureDebug("        using this fill");
+                    fill_queue.List.Remove(fr);
+                    fill_queue.DecreaseLinklessCount();
+                    if (fill_queue.List.Count == 0) { _queues.Remove(sym); }
+
+                    res.ResultObject = fr;
+                    return res;
+                }
+            }
+
+            res.setError("No fill record for the order id '" + id + "' symbol '" + sym + "'.");
+            return res;
+        }
+
+        public int QueueCount(string p)
+        {
+            return _queues.ContainsKey(p) ? _queues[p].List.Count : 0;
+        }
+
+        public int QueueUnitTotal(string p)
+        {
+            int n = 0;
+            if (!_queues.ContainsKey(p)) { return n; }
+            foreach (FillRecord fr in _queues[p].List) { n += fr.Fill.Quantity; }
+            return n;
+        }
+
+        public FunctionObjectResult<FillRecord> GetNextFill(string p)
+        {
+            FunctionObjectResult<FillRecord> fres = new FunctionObjectResult<FillRecord>();
+            if (!_queues.ContainsKey(p))
+            {
+                fres.setError("No fill record queue found for symbol '" + p + "'");
+                return fres;
+            }
+            foreach (FillRecord fr in _queues[p].List) { fres.ResultObject = fr; _queues[p].List.Remove(fr); return fres; }
+            fres.setError("No fill records found in queue for symbol '" + p + "'");
+            return fres;
+        }
     }
 
     [Serializable]
     public class OpenOrderRecord : OrderRecord
     {
         public OpenOrderRecord() { }
-        public OpenOrderRecord(BrokerOrder bo, bool is_re):base(bo,is_re) { }
+        public OpenOrderRecord(BrokerOrder bo, bool is_re) : base(bo, is_re) { }
 
         private string _fill_id = null;
         public string FillId { set { _fill_id = value; } get { return (_fill_id); } }
@@ -2604,7 +3598,24 @@ namespace RightEdgeOandaPlugin
         public OrderRecord(BrokerOrder bo, bool is_re) { _order = bo; _is_right_edge_order = is_re; }
 
         private BrokerOrder _order = null;
+        [XmlIgnore] //FIX ME - there are values in this needed to re-sync the account state on load
         public BrokerOrder BrokerOrder { set { _order = value; } get { return (_order); } }
+
+        private BrokerOrderState _bo_state = BrokerOrderState.Invalid;
+        public BrokerOrderState BrokerOrderState { get { return (_order == null ? _bo_state : _order.OrderState); } set { _bo_state = value; if (_order != null) { _order.OrderState = value; } } }
+
+        private OrderType _o_type = OrderType.PeggedToMarket;
+        public OrderType OrderType { get { return (_order == null ? _o_type : _order.OrderType); } set { _o_type = value; if (_order != null) { _order.OrderType = value; } } }
+
+        private TransactionType _t_type = TransactionType.Interest;
+        public TransactionType TransactionType { get { return (_order == null ? _t_type : _order.TransactionType); } set { _t_type = value; if (_order != null) { _order.TransactionType = value; } } }
+
+        private long _o_size = 0;
+        public long OrderSize { get { return (_order == null ? _o_size : _order.Shares); } set { _o_size = value; if (_order != null) { _order.Shares = value; } } }
+
+        private string _o_id = string.Empty;
+        public string OrderID { get { return (_order == null ? _o_id : _order.OrderId); } set { _o_id = value; if (_order != null) { _order.OrderId = value; } } }
+
 
         private int _fill_qty = 0;
         public int FillQty { set { _fill_qty = value; } get { return (_fill_qty); } }
@@ -2631,12 +3642,12 @@ namespace RightEdgeOandaPlugin
         public FunctionObjectResult<int> IDNumber()
         {
             FunctionObjectResult<int> res = new FunctionObjectResult<int>();
-            if (openOrder == null || openOrder.BrokerOrder==null)
+            if (openOrder == null || openOrder.BrokerOrder == null)
             {
                 res.setError("Unable to resolve id number, missing open order broker record.");
                 return res;
             }
-            
+
             OrderType ot = openOrder.BrokerOrder.OrderType;
             int id_num;
             if (ot == OrderType.Limit)
@@ -2657,13 +3668,19 @@ namespace RightEdgeOandaPlugin
 
         private OrderRecord _close_order = null;
         public OrderRecord closeOrder { set { _close_order = value; } get { return (_close_order); } }
+
+        public void ClearREOwned()
+        {
+            if (_open_order != null) { _open_order.IsRightEdgeOrder = false; }
+            if (_close_order != null) { _close_order.IsRightEdgeOrder = false; }
+        }
     }
 
     [Serializable]
     public class TradeRecords : RightEdgeOandaPlugin.SerializableDictionary<IDString, TradeRecord>
     {//key is orderid of tr.openorder
-        public TradeRecords(){ }
-        public TradeRecords(IDString id){ _id = id; }
+        public TradeRecords() { }
+        public TradeRecords(IDString id) { _id = id; }
 
         private IDString _id;
         [XmlElement("IDValue")]
@@ -2671,7 +3688,7 @@ namespace RightEdgeOandaPlugin
     }
 
     [Serializable]
-    public class BrokerPositionRecord : BrokerPosition
+    public class BrokerPositionRecord
     {
         public BrokerPositionRecord() { }
         public BrokerPositionRecord(string id) { _id = id; }
@@ -2679,6 +3696,12 @@ namespace RightEdgeOandaPlugin
         private string _id;
         [XmlElement("IDValue")]
         public string ID { set { _id = value; } get { return (_id); } }
+
+        private Symbol _sym = null;
+        public Symbol Symbol { set { _sym = value; } get { return (_sym); } }
+
+        private PositionType _pt;
+        public PositionType Direction { set { _pt = value; } get { return (_pt); } }
 
         private int _stop_num = 1;
         public int StopNumber { set { _stop_num = value; } get { return (_stop_num); } }
@@ -2715,6 +3738,73 @@ namespace RightEdgeOandaPlugin
             }
             finally { Monitor.Pulse(_tr_dict); Monitor.Exit(_tr_dict); }
         }
+
+        public void ClearREOwned()
+        {
+            if (_stop_order != null) { _stop_order.IsRightEdgeOrder = false; }
+            if (_target_order != null) { _target_order.IsRightEdgeOrder = false; }
+            if (_close_order != null) { _close_order.IsRightEdgeOrder = false; }
+
+            foreach (IDString ids in _tr_dict.Keys)
+                { _tr_dict[ids].ClearREOwned(); }
+        }
+
+        public FunctionResult VerifyREOwned()
+        {
+            FunctionResult fres = new FunctionResult();
+
+            if (_close_order != null && !_close_order.IsRightEdgeOrder)
+            {
+                fres.setError("Position record close order is not a RightEdge owned broker order.");
+                return fres;
+            }
+            if (_stop_order != null && !_stop_order.IsRightEdgeOrder)
+            {
+                fres.setError("Position record stop order is not a RightEdge owned broker order.");
+                return fres;
+            }
+            if (_target_order != null && !_target_order.IsRightEdgeOrder)
+            {
+                fres.setError("Position record target order is not a RightEdge owned broker order.");
+                return fres;
+            }
+
+            foreach (IDString trk in TradeRecords.Keys)
+            {
+                TradeRecord tr = TradeRecords[trk];
+
+                if (tr.openOrder.BrokerOrderState == BrokerOrderState.Filled)
+                {//the order is open...
+                    //tr open can be RE
+
+                    if (tr.closeOrder != null && tr.closeOrder.IsRightEdgeOrder)
+                    {//tr close should not be RE
+                        fres.setError("Trade record close order is a RightEdge owned broker order.");
+                        return fres;
+                    }
+                }
+                if (tr.openOrder.BrokerOrderState == BrokerOrderState.PendingCancel)
+                {//the order was being canceled...
+                    fres.setError("Trade record open order was being canceled!");
+                    return fres;
+                }
+                if (tr.openOrder.BrokerOrderState == BrokerOrderState.Submitted)
+                {//the order is waiting...
+                    if (!tr.openOrder.IsRightEdgeOrder)
+                    {//tr open must be RE
+                        fres.setError("Trade record open orders for submitted orders must have a RightEdge owned broker order.");
+                        return fres;
+                    }
+                    if (tr.closeOrder != null && tr.closeOrder.IsRightEdgeOrder)
+                    {//tr close should not be RE
+                        fres.setError("Trade record close order is a RightEdge owned broker order.");
+                        return fres;
+                    }
+                }
+            }
+
+            return fres;
+        }
     }
 
     #region ID matching classes
@@ -2724,7 +3814,7 @@ namespace RightEdgeOandaPlugin
         public string FillID = string.Empty;
 
         public OrderIDRecord() { }
-        public OrderIDRecord(TradeRecord tr){InitFromTradeRecord(tr);}
+        public OrderIDRecord(TradeRecord tr) { InitFromTradeRecord(tr); }
 
         public void InitFromTradeRecord(TradeRecord tr)
         {
@@ -2833,7 +3923,7 @@ namespace RightEdgeOandaPlugin
     #endregion
 
     [Serializable]
-    public class BrokerPositionRecords 
+    public class BrokerPositionRecords
     {
         public BrokerPositionRecords(string id) { _id = id; }
         public BrokerPositionRecords() { }
@@ -2855,7 +3945,7 @@ namespace RightEdgeOandaPlugin
             foreach (string pos_key in _positions.Keys)
             {
                 PositionIDRecord pidr = new PositionIDRecord(_positions[pos_key]);
-                
+
                 res = pidr.ContainsId(tr_id);
                 if (res.MatchType != TransactionMatchType.None)
                 {
@@ -2925,7 +4015,7 @@ namespace RightEdgeOandaPlugin
             res.setError("No position matched trans='" + trans_num + "' link='" + link_num + "'");
             return res;
         }
-        
+
         /*
         public PositionFetchResult popBrokerPositionRecord(string bpr_id)
         {
@@ -2964,7 +4054,7 @@ namespace RightEdgeOandaPlugin
 
         public int getTotalSize()
         {//sum of all open filled market/limit sizes
-            int n=0;
+            int n = 0;
             foreach (string bpr_key in _positions.Keys)
             {
                 BrokerPositionRecord bpr = _positions[bpr_key];
@@ -2972,7 +4062,7 @@ namespace RightEdgeOandaPlugin
                 {
                     TradeRecord tr = bpr.TradeRecords[tr_key];
 
-                    BrokerOrder trbo=tr.openOrder.BrokerOrder;
+                    BrokerOrder trbo = tr.openOrder.BrokerOrder;
                     if (trbo.OrderState == BrokerOrderState.Filled || trbo.OrderState == BrokerOrderState.PartiallyFilled)
                     {
                         n += (int)trbo.Shares;
@@ -2988,46 +4078,236 @@ namespace RightEdgeOandaPlugin
     {
         public BrokerSymbolRecords(int id) { _id = id; }
         public BrokerSymbolRecords() { }
-        
+
         private int _id;
         public int AccountID { set { _id = value; } get { return (_id); } }
     }
     #endregion
 
     [Serializable]
-    [Synchronization(SynchronizationAttribute.REQUIRED)]
-    public class OrderBook : ContextBoundObject
+    public class OrderBookData : XMLFileSerializeBase
     {
-        public OrderBook() { }
-        public OrderBook(OAPluginOptions opts) { _opts = opts; }
-
-        private OAPluginOptions _opts = null;
-        [XmlIgnore]
-        public OAPluginOptions OAPluginOptions { set { _opts = value; } get { return (_opts); } }
-
-        private OandAPlugin _parent = null;
-        [XmlIgnore]
-        public OandAPlugin OAPlugin { set { _parent = value; } get { return (_parent); } }
-
-        private BrokerLog _log = null;
-        [XmlIgnore]
-        public BrokerLog BrokerLog { set { _log = value; } get { return (_log); } }
-
-        //FIX ME - this really should be private only, but how to get it to serialize then??
+        public OrderBookData() { }
         private RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> _accounts = new RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords>();
         public RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> Accounts { set { _accounts = value; } get { return (_accounts); } }
 
-        private RightEdgeOandaPlugin.SerializableDictionary<string, List<FillRecord>> _fill_queue = new RightEdgeOandaPlugin.SerializableDictionary<string, List<FillRecord>>();
-
-        private void addFillrecord(string pair, Fill fill, int id)
+        public void ClearREOwned()
         {
-            if (!_fill_queue.ContainsKey(pair))
+            foreach(int a in _accounts.Keys)
             {
-                _fill_queue[pair] = new List<FillRecord>();
+                BrokerSymbolRecords bsrl = _accounts[a];
+                foreach(string s in bsrl.Keys)
+                {
+                    BrokerPositionRecords bprl = bsrl[s];
+                    foreach (string p in bprl.Positions.Keys)
+                    {
+                        bprl.Positions[p].ClearREOwned();
+                    }
+                }
             }
-            _fill_queue[pair].Add(new FillRecord(fill, id.ToString()));
         }
-        
+
+        public FunctionResult VerifyREOwned()
+        {
+            FunctionResult fres=new FunctionResult();
+            foreach (int a in _accounts.Keys)
+            {
+                BrokerSymbolRecords bsrl = _accounts[a];
+                foreach (string s in bsrl.Keys)
+                {
+                    BrokerPositionRecords bprl = bsrl[s];
+                    foreach (string p in bprl.Positions.Keys)
+                    {
+                        fres = bprl.Positions[p].VerifyREOwned();
+                        if (fres.Error) { return fres; }
+                    }
+                }
+            }
+
+            return fres;
+        }
+
+        public FunctionResult SetBrokerOrder(BrokerOrder o)
+        {
+            FunctionResult fres = new FunctionResult();
+            bool found = false;
+            foreach (int a in _accounts.Keys)
+            {
+                if (found) { break; }
+                BrokerSymbolRecords bsrl = _accounts[a];
+
+                if (!bsrl.ContainsKey(o.OrderSymbol.Name))
+                {//no position record list found for the symbol
+                    continue;
+                }
+
+                BrokerPositionRecords bprl = bsrl[o.OrderSymbol.Name];
+
+                foreach (string p in bprl.Positions.Keys)
+                {
+                    if (found) { break; }
+
+                    BrokerPositionRecord bpr = bprl.Positions[p];
+                    if (bpr.ID == o.PositionID)
+                    {
+                        if (bpr.CloseOrder != null && bpr.CloseOrder.OrderID == o.OrderId)
+                        {//matches p.close
+                            bpr.CloseOrder.BrokerOrder = o;
+                            bpr.CloseOrder.IsRightEdgeOrder = true;
+                            found = true;
+                            break;
+                        }
+                        else if (bpr.StopOrder != null && bpr.StopOrder.OrderID == o.OrderId)
+                        {//matches p.stop
+                            bpr.StopOrder.BrokerOrder = o;
+                            bpr.StopOrder.IsRightEdgeOrder = true;
+                            found = true;
+                            break;
+                        }
+                        else if (bpr.TargetOrder != null && bpr.TargetOrder.OrderID == o.OrderId)
+                        {//matches p.target
+                            bpr.TargetOrder.BrokerOrder = o;
+                            bpr.TargetOrder.IsRightEdgeOrder = true;
+                            found = true;
+                            break;
+                        }
+                        else
+                        {//search the trade records
+                            foreach (IDString trk in bpr.TradeRecords.Keys)
+                            {
+                                if (found) { break; }
+
+                                TradeRecord tr = bpr.TradeRecords[trk];
+                                if (tr.openOrder != null && tr.openOrder.OrderID == o.OrderId)
+                                {//matches p.close
+                                    tr.openOrder.BrokerOrder = o;
+                                    tr.openOrder.IsRightEdgeOrder = true;
+                                    found = true;
+                                    break;
+                                }
+                                if (tr.closeOrder != null && tr.closeOrder.OrderID == o.OrderId)
+                                {//matches p.close
+                                    tr.closeOrder.BrokerOrder = o;
+                                    tr.closeOrder.IsRightEdgeOrder = true;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (!found)
+            { fres.setError("Unable to set broker order, no matching order found in the orderbook"); }
+            return fres;
+        }
+
+        public override FunctionResult initFromSerialized<T>(T src)
+        {
+            if (typeof(T) == typeof(OrderBookData))
+            { _accounts = ((OrderBookData)(object)src).Accounts; }
+            return base.initFromSerialized<T>(src);
+        }
+    }
+
+    [Synchronization(SynchronizationAttribute.REQUIRED)]
+    public class OrderBook : ContextBoundObject
+    {
+        public OrderBook()
+        {
+        }
+        public OrderBook(OAPluginOptions opts)
+        {
+            setOptions(opts);
+        }
+
+        #region internal objects
+        private OAPluginOptions _opts = null;
+        public OAPluginOptions OAPluginOptions { set { setOptions(value); } get { return (_opts); } }
+
+        //private string _ename = "broker";
+        private TradeEntities _trade_entities = null;
+        public TradeEntities TradeEntities { get { return (_trade_entities); } }
+
+        private AccountValuesStore _account_values = null;
+        public AccountValuesStore AccountValues { get { return (_account_values); } }
+        public bool HaveAccountValues { get { return (_account_values != null && ((_opts != null && _opts.AccountValuesEnabled) || _opts == null)); } }
+
+        private OandAPlugin _parent = null;
+        public OandAPlugin OAPlugin { set { _parent = value; } get { return (_parent); } }
+
+        private BrokerLog _log = null;
+        public BrokerLog BrokerLog { set { _log = value; } get { return (_log); } }
+
+        private FillQueue _fill_queue = new FillQueue();
+        private OrderBookData _accounts = new OrderBookData();
+        #endregion
+
+        private void setOptions(OAPluginOptions opts)
+        {
+            _opts = opts;
+            if (_opts == null) { _trade_entities = null; _account_values = null; return; }
+
+            try
+            {
+                _trade_entities = null;
+                FunctionObjectResult<TradeEntities> tesres = TradeEntities.newFromSettings<TradeEntities>(_opts.TradeEntityFileName);
+                if (!tesres.Error)
+                {
+                    _trade_entities = tesres.ResultObject;
+                }
+            }
+            catch
+            {
+                _trade_entities = null;
+            }
+
+            if (_trade_entities == null)
+            {
+                _trade_entities = new TradeEntities(_opts.DefaultAccount, _opts.DefaultUpperBoundsType, _opts.DefaultUpperBoundsValue, _opts.DefaultLowerBoundsType, _opts.DefaultLowerBoundsValue);
+                _trade_entities.FileName = _opts.TradeEntityFileName;
+            }
+            
+            _trade_entities.RefreshOnLookup = true;
+
+            if (_opts.AccountValuesEnabled)
+            {
+                try
+                {
+                    _account_values = null;
+                    FunctionObjectResult<AccountValuesStore> avsres = AccountValuesStore.newFromSettings<AccountValuesStore>(_opts.AccountValuesFileName);
+                    if (!avsres.Error)
+                    {
+                        _account_values = avsres.ResultObject;
+                    }
+                }
+                catch(Exception)
+                {
+                    _account_values = null;
+                }
+
+                if (_account_values == null)
+                {
+                    _account_values = new AccountValuesStore();
+                    _account_values.FileName = _opts.AccountValuesFileName;
+                    try
+                    {
+                        _account_values.saveSettings<AccountValuesStore>();
+                    }
+                    catch(Exception)
+                    {
+                        _account_values = null;
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                _account_values = null;
+            }
+            return;
+        }
+
         public void LogOrderBook(string s)
         {
             /*
@@ -3053,6 +4333,7 @@ namespace RightEdgeOandaPlugin
             return;
         }
 
+        #region transaction / position lookup
         private TransactionFetchResult fetchBrokerPositionRecordByTransResponse(ResponseRecord response)
         {
             TransactionFetchResult fetch_ret = new TransactionFetchResult();
@@ -3061,13 +4342,13 @@ namespace RightEdgeOandaPlugin
             int act_id = response.AccountId;
             string sym_id = response.Transaction.Base + "/" + response.Transaction.Quote;
 
-            if (!_accounts.ContainsKey(act_id))
+            if (!_accounts.Accounts.ContainsKey(act_id))
             {
                 fetch_ret.setError("unable to locate orderbook symbol page for account id '" + act_id.ToString() + "'");
                 return fetch_ret;
             }
 
-            BrokerSymbolRecords bsrl = _accounts[act_id];
+            BrokerSymbolRecords bsrl = _accounts.Accounts[act_id];
 
             if (!bsrl.ContainsKey(sym_id))
             {
@@ -3086,9 +4367,9 @@ namespace RightEdgeOandaPlugin
             PositionFetchResult ret = new PositionFetchResult();
 
             //there's no way to know where this tr_id is in the account/symbol/position pages, so search them...
-            foreach (int account_id in _accounts.Keys)
+            foreach (int account_id in _accounts.Accounts.Keys)
             {
-                BrokerSymbolRecords bsrl = _accounts[account_id];
+                BrokerSymbolRecords bsrl = _accounts.Accounts[account_id];
                 foreach (string sym_id in bsrl.Keys)
                 {
                     BrokerPositionRecords bprl = bsrl[sym_id];
@@ -3113,12 +4394,13 @@ namespace RightEdgeOandaPlugin
             ret.setError("position record not found for trade id '" + tr_id + "'");
             return ret;
         }
+        
         private PositionFetchResult fetchBrokerPositionRecord(string pos_id)
         {//try to find the bpr by a position id string (may be any type of position order (open/stop/target/close)
             //there's no way to know where this pos_id is in the account/symbol pages, so search them...
-            foreach (int account_id in _accounts.Keys)
+            foreach (int account_id in _accounts.Accounts.Keys)
             {
-                BrokerSymbolRecords bsrl = _accounts[account_id];
+                BrokerSymbolRecords bsrl = _accounts.Accounts[account_id];
                 foreach (string sym_id in bsrl.Keys)
                 {
                     BrokerPositionRecords bprl = bsrl[sym_id];
@@ -3135,41 +4417,34 @@ namespace RightEdgeOandaPlugin
             ret.setError("position record not found for position id '" + pos_id + "'");
             return ret;
         }
-
-
-
-        private PositionFetchResult fetchBrokerPositionRecord(int act_id, string sym_id, string pos_id)
+        private PositionFetchResult fetchBrokerPositionRecord(string sym_id, string pos_id)
         {
             PositionFetchResult ret = new PositionFetchResult();
-            if (!_accounts.ContainsKey(act_id))
+            foreach (int act_id in _accounts.Accounts.Keys)
             {
-                ret.setError("account record not found for account id '" + act_id + "'");
+                BrokerSymbolRecords bsrl = _accounts.Accounts[act_id];
+
+                if (!bsrl.ContainsKey(sym_id))
+                {
+                    continue;
+                }
+
+                BrokerPositionRecords bprl = bsrl[sym_id];
+                if (!bprl.PositionExists(pos_id))
+                {
+                    continue;
+                }
+
+                ret = bprl.FetchPosition(pos_id);
+                ret.AccountId = act_id;
                 return ret;
             }
 
-            BrokerSymbolRecords bsrl = _accounts[act_id];
-
-            if (!bsrl.ContainsKey(sym_id))
-            {
-                ret.setError("symbol record not found for symbol id '" + sym_id + "'");
-                return ret;
-            }
-
-            BrokerPositionRecords bprl = bsrl[sym_id];
-
-            if (!bprl.PositionExists(pos_id))
-            {
-                ret.setError("position record not found for position id '" + pos_id + "'");
-                return ret;
-            }
-
-            ret = bprl.FetchPosition(pos_id);
-            ret.AccountId = act_id;
+            ret.setError("position record not found for position id '" + pos_id + "'");
             return ret;
         }
 
-
-        private TransactionFetchResult fetchBrokerPositionRecordByBestFit(int act_id, BrokerOrder order)
+        private TransactionFetchResult fetchBrokerPositionRecordByBestFit(BrokerOrder order)
         {//this order is not able to be found by pos id...
             TransactionFetchResult ret = new TransactionFetchResult();
 
@@ -3178,52 +4453,47 @@ namespace RightEdgeOandaPlugin
                 ret.setError("Only close requests can be matched by best fit.");
                 return ret;
             }
-            
-            if (!_accounts.ContainsKey(act_id))
-            {
-                ret.setError("account record not found for account id '" + act_id + "'");
-                return ret;
-            }
 
-            BrokerSymbolRecords bsrl = _accounts[act_id];
             string sym_id = order.OrderSymbol.Name;
-
-            if (!bsrl.ContainsKey(sym_id))
+            foreach (int act_id in _accounts.Accounts.Keys)
             {
-                ret.setError("symbol record not found for symbol id '" + sym_id + "'");
-                return ret;
-            }
-
-            BrokerPositionRecords bprl = bsrl[sym_id];
-
-            //find the first open CancelToClose order and return that position
-            foreach (string bpr_key in bprl.Positions.Keys)
-            {
-                BrokerPositionRecord bpr = bprl.Positions[bpr_key];
-
-                foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                BrokerSymbolRecords bsrl = _accounts.Accounts[act_id];
+                if (!bsrl.ContainsKey(sym_id))
                 {
-                    TradeRecord tr = bpr.TradeRecords[tr_key];
+                    continue;
+                }
 
-                    if (!tr.openOrder.CancelToClose) { continue; }
+                BrokerPositionRecords bprl = bsrl[sym_id];
 
-                    //cancel to close open order...does it match the close request order?
+                //find the first open CancelToClose order and return that position
+                foreach (string bpr_key in bprl.Positions.Keys)
+                {
+                    BrokerPositionRecord bpr = bprl.Positions[bpr_key];
 
-                    if (order.Shares == tr.openOrder.BrokerOrder.Shares)
-                    {//at this point the acct/symbol/shares all match...call it a fit...
-                        ret.ResultObject = bpr;
-                        ret.PositionId = tr.openOrder.BrokerOrder.PositionID;
-                        ret.TransactionTradeRecord = tr;
-                        ret.OrderId = tr.OrderID;
-                        ret.AccountId = act_id;
-                        return ret;
+                    foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                    {
+                        TradeRecord tr = bpr.TradeRecords[tr_key];
+
+                        if (!tr.openOrder.CancelToClose) { continue; }
+
+                        //cancel to close open order...does it match the close request order?
+
+                        if (order.Shares == tr.openOrder.BrokerOrder.Shares)
+                        {//at this point the acct/symbol/shares all match...call it a fit...
+                            ret.ResultObject = bpr;
+                            ret.PositionId = tr.openOrder.BrokerOrder.PositionID;
+                            ret.TransactionTradeRecord = tr;
+                            ret.OrderId = tr.OrderID;
+                            ret.AccountId = act_id;
+                            return ret;
+                        }
                     }
                 }
             }
             ret.setError("No open order found which fits this close request.");
             return ret;
         }
-
+        #endregion
 
 
         private FunctionResult pushTradeRecord(int act_id, BrokerOrder open_order, bool is_re)
@@ -3235,12 +4505,12 @@ namespace RightEdgeOandaPlugin
             fetch_bpr.AccountId = act_id;
             fetch_bpr.SymbolName = open_order.OrderSymbol.Name;
 
-            if (!_accounts.ContainsKey(act_id))
+            if (!_accounts.Accounts.ContainsKey(act_id))
             {
-                _accounts[act_id] = new BrokerSymbolRecords(act_id);
+                _accounts.Accounts[act_id] = new BrokerSymbolRecords(act_id);
             }
 
-            BrokerSymbolRecords bsrl = _accounts[act_id];
+            BrokerSymbolRecords bsrl = _accounts.Accounts[act_id];
 
             string sym = fetch_bpr.SymbolName;
 
@@ -3260,7 +4530,7 @@ namespace RightEdgeOandaPlugin
                 bpr.Symbol = open_order.OrderSymbol;
                 bpr.Direction = (open_order.TransactionType == TransactionType.Short) ? PositionType.Short : PositionType.Long;
 
-                bprl.Positions.Add(bpr.ID,bpr);
+                bprl.Positions.Add(bpr.ID, bpr);
 
                 fetch_bpr.ResultObject = bpr;
             }
@@ -3268,11 +4538,57 @@ namespace RightEdgeOandaPlugin
             return fetch_bpr.ResultObject.pushTrade(open_order, is_re);
         }
 
+        public FXClientTaskObjectResult<AccountResult> AccountResolution(string entity_id)
+        {
+            return AccountResolution(entity_id, true);
+        }
+        public FXClientTaskObjectResult<AccountResult> AccountResolution(string entity_id, bool activate_responder)
+        {
+            FXClientTaskObjectResult<AccountResult> res = new FXClientTaskObjectResult<AccountResult>();
+            string act_id = _trade_entities.GetAccount(entity_id);
+            if (string.IsNullOrEmpty(act_id))
+            {
+                res.setError("unable to get an account identifier for entity '" + entity_id + "'", FXClientResponseType.Invalid, false);
+                return res;
+            }
+
+            FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(act_id);
+            if (ares.Error)
+            {
+                res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
+                return res;
+            }
+            res.ResultObject = ares.ResultObject;
+
+            if (!activate_responder) { return res; }
+
+            Account acct = res.ResultObject.FromInChannel;
+            FXClientTaskResult tres = _parent.ResponseProcessor.ActivateAccountResponder(acct);
+            res.TaskCompleted = tres.TaskCompleted;
+            if (tres.Error)
+            {
+                res.setError(tres.Message, tres.FXClientResponse, tres.Disconnected);
+                return res;
+            }
+            return res;
+        }
 
         #region order submission
-        public FXClientResult SubmitLimitOrder(BrokerOrder order, Account acct)
+        public FXClientTaskResult SubmitLimitOrder(BrokerOrder order, out string act_id)
         {
-            FXClientResult res;
+            FXClientTaskResult res = new FXClientTaskResult();
+            string entity_id = TradeEntityID.CreateID(_opts.TradeEntityName, order);
+
+            FXClientTaskObjectResult<AccountResult> tares = AccountResolution(entity_id);
+            res.TaskCompleted = tares.TaskCompleted;
+            if(tares.Error)
+            {
+                res.setError(tares.Message, tares.FXClientResponse, tares.Disconnected);
+                act_id = string.Empty;
+                return res;
+            }
+            Account acct = tares.ResultObject.FromInChannel;
+            act_id = acct.AccountId.ToString();
 
             fxPair oa_pair = new fxPair(order.OrderSymbol.ToString());
             LimitOrder lo = new LimitOrder();
@@ -3284,14 +4600,12 @@ namespace RightEdgeOandaPlugin
             if (order.TransactionType == TransactionType.Short)
             { lo.Units = -1 * lo.Units; }
 
-            //FIX ME<-- extract an order specific bounds value from the order/symbol tags...
-            double slippage = _opts.BoundsValue;//use the broker value as the fallback
+            double n=_trade_entities.GetUpperBoundsPrice(entity_id, order.LimitPrice);
+            lo.HighPriceLimit = ((n == order.LimitPrice) ? 0.0 : n);
+                
+            n= _trade_entities.GetLowerBoundsPrice(entity_id, order.LimitPrice);
+            lo.LowPriceLimit = ((n == order.LimitPrice) ? 0.0 : n);
 
-            if (_opts.Bounds)//always honor the broker enabled setting
-            {
-                lo.HighPriceLimit = order.LimitPrice + 0.5 * slippage;
-                lo.LowPriceLimit = order.LimitPrice - 0.5 * slippage;
-            }
             lo.Price = order.LimitPrice;
 
             int h = 36;//FIX ME - how many hours should a limit order last???
@@ -3303,8 +4617,8 @@ namespace RightEdgeOandaPlugin
             }
             //else - the default limit order duration is 1 hour
 
-            res = _parent.fxClient.SendOAExecute(acct, lo);
-            if (res.Error) { return res; }
+            FXClientResult sres = _parent.fxClient.SendOAExecute(acct, lo);
+            if (sres.Error) { res.setError(sres.Message,sres.FXClientResponse,sres.Disconnected);  return res; }
 
             order.OrderState = BrokerOrderState.Submitted;
             order.OrderId = lo.Id.ToString();
@@ -3313,9 +4627,22 @@ namespace RightEdgeOandaPlugin
             if (fres.Error) { res.setError(fres.Message); }
             return res;
         }
-        public FXClientResult SubmitMarketOrder(BrokerOrder order, Account acct)
+        public FXClientTaskResult SubmitMarketOrder(BrokerOrder order, out string act_id)
         {
-            FXClientResult res;
+            FXClientTaskResult res = new FXClientTaskResult();
+            string entity_id = TradeEntityID.CreateID(_opts.TradeEntityName, order);
+
+            FXClientTaskObjectResult<AccountResult> tares = AccountResolution(entity_id);
+            res.TaskCompleted = tares.TaskCompleted;
+            if (tares.Error)
+            {
+                res.setError(tares.Message, tares.FXClientResponse, tares.Disconnected);
+                act_id = string.Empty;
+                return res;
+            }
+            Account acct = tares.ResultObject.FromInChannel;
+            act_id = acct.AccountId.ToString();
+
             fxPair oa_pair = new fxPair(order.OrderSymbol.ToString());
             MarketOrder mo = new MarketOrder();
 
@@ -3326,20 +4653,18 @@ namespace RightEdgeOandaPlugin
             if (order.TransactionType == TransactionType.Short)
             { mo.Units = -1 * mo.Units; }
 
-            if (_opts.Bounds)//always honor the broker enabled setting
-            {
-                //FIX ME<-- extract an order specific bounds value from the order/symbol tags...
-                double slippage = _opts.BoundsValue;//use the broker value as the fallback
-                double price = order.LimitPrice;
-                if (price != 0.0)
-                {
-                    mo.HighPriceLimit = price + 0.5 * slippage;
-                    mo.LowPriceLimit = price - 0.5 * slippage;
-                }
-            }
+            double n = _trade_entities.GetUpperBoundsPrice(entity_id, order.LimitPrice);
+            mo.HighPriceLimit = n == order.LimitPrice ? 0.0 : n;
+            
+            n = _trade_entities.GetLowerBoundsPrice(entity_id, order.LimitPrice);
+            mo.LowPriceLimit = n == order.LimitPrice ? 0.0 : n;
 
-            res = _parent.fxClient.SendOAExecute(acct, mo);
-            if (res.Error) { return res; }
+            FXClientResult fxcres = _parent.fxClient.SendOAExecute(acct, mo);
+            if (fxcres.Error)
+            {
+                res.setError(fxcres.Message, fxcres.FXClientResponse, fxcres.Disconnected);
+                return res;
+            }
 
             order.OrderState = BrokerOrderState.Submitted;
             order.OrderId = mo.Id.ToString();
@@ -3349,21 +4674,21 @@ namespace RightEdgeOandaPlugin
             return res;
         }
 
-        public FXClientResult SubmitCloseOrder(BrokerOrder order, Account acct)
+        public FXClientTaskResult SubmitCloseOrder(BrokerOrder order, out string act_id)
         {
-
-            FXClientResult res = new FXClientResult();
+            act_id = string.Empty;
+            FXClientTaskResult res = new FXClientTaskResult();
             PositionFetchResult fetch_bpr = null;
             int orders_sent = 0;
             BrokerPositionRecord cp = null;
             try
             {
-                fetch_bpr = fetchBrokerPositionRecord(acct.AccountId, order.OrderSymbol.ToString(), order.PositionID);
+                fetch_bpr = fetchBrokerPositionRecord(order.OrderSymbol.ToString(), order.PositionID);
                 if (fetch_bpr.Error)
                 {
                     //since their is no orderID in the order and PositionID is not valid
                     //have to do "best fit" matching.... ughhh...
-                    TransactionFetchResult tfetch_bpr = fetchBrokerPositionRecordByBestFit(acct.AccountId, order);
+                    TransactionFetchResult tfetch_bpr = fetchBrokerPositionRecordByBestFit(order);
                     if (tfetch_bpr.Error)
                     {//still did not find it, return the original error and the best fit error
                         res.setError("Unable to locate close order's position record : '" + fetch_bpr.Message + "'. " + tfetch_bpr.Message, FXClientResponseType.Rejected, false);
@@ -3379,7 +4704,7 @@ namespace RightEdgeOandaPlugin
                         res.setError("Found close order's trade record by order id, but it's not a 'cancel to close'", FXClientResponseType.Rejected, false);
                         return res;
                     }
-                    
+
                     //remove the trade record from this position.
                     if (!tbpr.TradeRecords.Remove(tr.OrderID))
                     {
@@ -3389,7 +4714,7 @@ namespace RightEdgeOandaPlugin
 
                     //create a new position and add the trade record to the new position
                     tr.openOrder.BrokerOrder.PositionID = order.PositionID;//set the new position ID
-                    FunctionResult fr = pushTradeRecord(acct.AccountId,tr.openOrder.BrokerOrder,true);
+                    FunctionResult fr = pushTradeRecord(tfetch_bpr.AccountId, tr.openOrder.BrokerOrder, true);
                     if (fr.Error)
                     {
                         res.setError("Unable to push new position for cancel to close. " + fr.Message, FXClientResponseType.Rejected, false);
@@ -3397,7 +4722,7 @@ namespace RightEdgeOandaPlugin
                     }
 
                     //now fetch the new position and
-                    fetch_bpr = fetchBrokerPositionRecord(acct.AccountId, order.OrderSymbol.ToString(), order.PositionID);
+                    fetch_bpr = fetchBrokerPositionRecord(order.OrderSymbol.ToString(), order.PositionID);
                     if (fetch_bpr.Error)
                     {
                         res.setError("Unable to fetch new position for cancel to close." + fetch_bpr.Message, FXClientResponseType.Rejected, false);
@@ -3411,8 +4736,7 @@ namespace RightEdgeOandaPlugin
                 order.OrderState = BrokerOrderState.Submitted;
                 IDString cid = new IDString(IDType.Close, int.Parse(order.PositionID));
                 order.OrderId = cid.ID;
-                
-                
+
                 if (cp.CloseOrder != null)
                 {
                     res.setError("pre-existing close order id='" + cp.CloseOrder.BrokerOrder.OrderId + "'", FXClientResponseType.Rejected, false);
@@ -3423,6 +4747,22 @@ namespace RightEdgeOandaPlugin
 
                 bool order_checked = false;
                 bool do_cancel = false;
+
+
+                ////////////////////////////////
+                FXClientTaskObjectResult<AccountResult> tares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
+                res.TaskCompleted = tares.TaskCompleted;
+                if (tares.Error)
+                {
+                    res.setError(tares.Message, tares.FXClientResponse, tares.Disconnected);
+                    act_id = string.Empty;
+                    return res;
+                }
+                Account acct = tares.ResultObject.FromInChannel;
+                act_id = acct.AccountId.ToString();
+                ////////////////////////////////
+
+                
 
                 foreach (IDString tr_key in cp.TradeRecords.Keys)
                 {
@@ -3454,7 +4794,7 @@ namespace RightEdgeOandaPlugin
                         FXClientResult subres = _parent.fxClient.SendOAClose(acct, cmo);
                         if (subres.Error)
                         {
-                            if (!subres.OrderMissing) { return subres; }
+                            if (!subres.OrderMissing) { res.setError(subres.Message, subres.FXClientResponse, subres.Disconnected); return res; }
                             res.OrderMissing = true;
                         }
                         orders_sent++;
@@ -3492,7 +4832,7 @@ namespace RightEdgeOandaPlugin
                     bro.OrderType = order.OrderType;
                     bro.TransactionType = order.TransactionType;
 
-                    tr.closeOrder = new OrderRecord(bro,false);
+                    tr.closeOrder = new OrderRecord(bro, false);
 
                     if (do_cancel) { break; }
                 }
@@ -3524,38 +4864,53 @@ namespace RightEdgeOandaPlugin
             catch (Exception e)
             {
                 _log.captureException(e);
-                res.setError("Unhandled exception while closing orders. : " + e.Message,FXClientResponseType.Rejected,false);
-                if (cp!=null && orders_sent == 0) { cp.CloseOrder = null; }
+                res.setError("Unhandled exception while closing orders. : " + e.Message, FXClientResponseType.Rejected, false);
+                if (cp != null && orders_sent == 0) { cp.CloseOrder = null; }
                 return res;
             }
         }
 
-
-        public FXClientResult SubmitPositionStopLossOrder(BrokerOrder order, Account acct)
+        public FXClientTaskResult SubmitPositionStopLossOrder(BrokerOrder order, out string act_id)
         {
-            FXClientResult res;
+            act_id = string.Empty;
+            FXClientTaskResult res = new FXClientTaskResult();
             PositionFetchResult fetch_bpr = null;
             try
             {
-                fetch_bpr = fetchBrokerPositionRecord(acct.AccountId, order.OrderSymbol.ToString(), order.PositionID);
+                fetch_bpr = fetchBrokerPositionRecord(order.OrderSymbol.ToString(), order.PositionID);
                 if (fetch_bpr.Error)
                 {
-                    res = new FXClientResult();
-                    res.setError("Unable to locate stop order's position record : '" + fetch_bpr.Message + "'.",FXClientResponseType.Rejected,false);
+                    res.setError("Unable to locate stop order's position record : '" + fetch_bpr.Message + "'.", FXClientResponseType.Rejected, false);
                     return res;
                 }
 
                 BrokerPositionRecord bpr = fetch_bpr.ResultObject;
 
+                ////////////////////////////////
+                FXClientTaskObjectResult<AccountResult> tares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
+                res.TaskCompleted = tares.TaskCompleted;
+                if (tares.Error)
+                {
+                    res.setError(tares.Message, tares.FXClientResponse, tares.Disconnected);
+                    act_id = string.Empty;
+                    return res;
+                }
+                Account acct = tares.ResultObject.FromInChannel;
+                act_id = acct.AccountId.ToString();
+                ////////////////////////////////
+
+
                 IDString n_id = new IDString(IDType.Stop, int.Parse(order.PositionID), bpr.StopNumber++);
                 order.OrderId = n_id.ID;
 
-                return SubmitStopOrders(bpr, order, acct);
+                FXClientResult fxcres = SubmitStopOrders(bpr, order, acct);
+                if (fxcres.Error)
+                { res.setError(fxcres.Message, fxcres.FXClientResponse, fxcres.Disconnected); }
+                return res;
             }
             catch (Exception e)
             {
-                res = new FXClientResult();
-                res.setError("Unhandled exception : '" + e.Message + "'.",FXClientResponseType.Rejected,false);
+                res.setError("Unhandled exception : '" + e.Message + "'.", FXClientResponseType.Rejected, false);
                 return res;
             }
         }
@@ -3570,7 +4925,7 @@ namespace RightEdgeOandaPlugin
             if (bpr.StopOrder == null)
             {
                 stop_added = true;
-                bpr.StopOrder = new OrderRecord(order,true);
+                bpr.StopOrder = new OrderRecord(order, true);
             }
             else if (order.StopPrice != 0.0)
             {
@@ -3640,8 +4995,8 @@ namespace RightEdgeOandaPlugin
                             return res;
                         }
 
-                        //gett a fresh account object (if the output channel was lost, the previous one will be invalid)
-                        FXClientObjectResult<AccountResult> acres = _parent.fxClient.ConvertStringToAccount(act_id.ToString());
+                        //get a fresh account object (if the output channel was lost, the previous one will be invalid)
+                        FXClientTaskObjectResult<AccountResult> acres = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
                         if (acres.Error)
                         {
                             if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
@@ -3672,7 +5027,7 @@ namespace RightEdgeOandaPlugin
                             res.setError("Stop Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'.", FXClientResponseType.Rejected, false);
                         }
                         if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
-                        
+
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -3730,9 +5085,9 @@ namespace RightEdgeOandaPlugin
                             res.OrdersSent = orders_sent;
                             return res;
                         }
-                        
+
                         //get a fresh account object (if the output channel was lost, the previous one will be invalid)
-                        FXClientObjectResult<AccountResult> acres = _parent.fxClient.ConvertStringToAccount(act_id.ToString());
+                        FXClientTaskObjectResult<AccountResult> acres = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
                         if (acres.Error)
                         {
                             if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
@@ -3773,7 +5128,7 @@ namespace RightEdgeOandaPlugin
                 {//unkown stop order error
                     if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
 
-                    res.setError("Unknown open order state for stop modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}",FXClientResponseType.Rejected,false);
+                    res.setError("Unknown open order state for stop modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}", FXClientResponseType.Rejected, false);
                     res.OrdersSent = orders_sent;
                     return res;
                 }
@@ -3785,31 +5140,47 @@ namespace RightEdgeOandaPlugin
             return res;
         }
 
-        public FXClientResult SubmitPositionTargetProfitOrder(BrokerOrder order, Account acct)
+        public FXClientTaskResult SubmitPositionTargetProfitOrder(BrokerOrder order, out string act_id)
         {
-            FXClientResult res;
+            act_id = string.Empty;
+            FXClientTaskResult res = new FXClientTaskResult();
             PositionFetchResult fetch_bpr = null;
             try
             {
-                fetch_bpr = fetchBrokerPositionRecord(acct.AccountId, order.OrderSymbol.ToString(), order.PositionID);
+                fetch_bpr = fetchBrokerPositionRecord(order.OrderSymbol.ToString(), order.PositionID);
                 if (fetch_bpr.Error)
                 {
-                    res = new FXClientResult();
-                    res.setError("Unable to locate target order's position record : '" + fetch_bpr.Message + "'.",FXClientResponseType.Rejected,false);
+                    res.setError("Unable to locate target order's position record : '" + fetch_bpr.Message + "'.", FXClientResponseType.Rejected, false);
                     return res;
                 }
 
                 BrokerPositionRecord bpr = fetch_bpr.ResultObject;
 
+
+                ////////////////////////////////
+                FXClientTaskObjectResult<AccountResult> tares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
+                res.TaskCompleted = tares.TaskCompleted;
+                if (tares.Error)
+                {
+                    res.setError(tares.Message, tares.FXClientResponse, tares.Disconnected);
+                    act_id = string.Empty;
+                    return res;
+                }
+                Account acct = tares.ResultObject.FromInChannel;
+                act_id = acct.AccountId.ToString();
+                ////////////////////////////////
+
                 IDString n_id = new IDString(IDType.Target, int.Parse(order.PositionID), bpr.TargetNumber++);
                 order.OrderId = n_id.ID;
 
-                return SubmitTargetOrders(bpr, order, acct);
+                FXClientResult fxcres = SubmitTargetOrders(bpr, order, acct);
+                if (fxcres.Error)
+                { res.setError(fxcres.Message, fxcres.FXClientResponse, fxcres.Disconnected); }
+                return res;
             }
             catch (Exception e)
             {
-                res = new FXClientResult();
-                res.setError("Unhandled exception : '" + e.Message + "'.",FXClientResponseType.Rejected,false);
+                res.setError("Unhandled exception : '" + e.Message + "'.", FXClientResponseType.Rejected, false);
                 return res;
             }
         }
@@ -3828,7 +5199,7 @@ namespace RightEdgeOandaPlugin
             }
             else if (order.LimitPrice != 0.0)
             {
-                res.setError("ptarget order already exists!",FXClientResponseType.Rejected,false);
+                res.setError("ptarget order already exists!", FXClientResponseType.Rejected, false);
                 return res;
             }
 
@@ -3860,7 +5231,7 @@ namespace RightEdgeOandaPlugin
                         if (fores.Disconnected)
                         {
                             if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
-                            res.setError(fores.Message,fores.FXClientResponse,fores.Disconnected);
+                            res.setError(fores.Message, fores.FXClientResponse, fores.Disconnected);
                             res.OrdersSent = orders_sent;
                             return res;
                         }
@@ -3895,7 +5266,7 @@ namespace RightEdgeOandaPlugin
                         }
 
                         //gett a fresh account object (if the output channel was lost, the previous one will be invalid)
-                        FXClientObjectResult<AccountResult> acres = _parent.fxClient.ConvertStringToAccount(act_id.ToString());
+                        FXClientTaskObjectResult<AccountResult> acres = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
                         if (acres.Error)
                         {
                             if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
@@ -3926,7 +5297,7 @@ namespace RightEdgeOandaPlugin
                             res.setError("Target Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'.", FXClientResponseType.Rejected, false);
                         }
                         if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
-                        
+
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -3984,7 +5355,7 @@ namespace RightEdgeOandaPlugin
                         }
 
                         //gett a fresh account object (if the output channel was lost, the previous one will be invalid)
-                        FXClientObjectResult<AccountResult> acres = _parent.fxClient.ConvertStringToAccount(act_id.ToString());
+                        FXClientTaskObjectResult<AccountResult> acres = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
                         if (acres.Error)
                         {
                             if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
@@ -4015,7 +5386,7 @@ namespace RightEdgeOandaPlugin
                             res.setError("Target Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.", FXClientResponseType.Rejected, false);
                         }
                         if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
-                        
+
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -4027,7 +5398,7 @@ namespace RightEdgeOandaPlugin
                 {//unkown target order error
                     if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
 
-                    res.setError("Unknown open order state for target modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}",FXClientResponseType.Rejected,false);
+                    res.setError("Unknown open order state for target modification. {id='" + tr.openOrder.BrokerOrder.OrderId + "' posid='" + tr.openOrder.BrokerOrder.PositionID + "' type='" + tr.openOrder.BrokerOrder.OrderType + "' state='" + tr.openOrder.BrokerOrder.OrderState + "'}", FXClientResponseType.Rejected, false);
                     res.OrdersSent = orders_sent;
                     return res;
                 }
@@ -4050,185 +5421,174 @@ namespace RightEdgeOandaPlugin
 
             if (fetch_bpr.Error)
             {
-                res.setError(fetch_bpr.Message,FXClientResponseType.Rejected,false);
+                res.setError(fetch_bpr.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
 
             BrokerPositionRecord bpr = fetch_bpr.ResultObject;
 
             int orders_to_send;
-            FXClientObjectResult<AccountResult> ares;
+            FXClientTaskObjectResult<AccountResult> ares;
             BrokerOrder bro = null;
-            FXClientTaskResult tres = null;
             Account acct;
             BrokerOrderState orig_state;
-
-            switch (oid.Type)
-            {//handle update to the stop/target order here...there were no trades/orders to adjust
-                case IDType.Stop:
-                    #region update position stop
-                    if (bpr.StopOrder == null)
-                    {//canceling an order which is already gone...allow it, but indicate the missing order
-                        _log.captureDebug("stop order not found, but cancel allowed (assuming a hit is incoming)");
-                        res.OrderMissing = true;
-                        return res;
-                    }
-                    
-                    bro = bpr.StopOrder.BrokerOrder;
-                    bro.StopPrice = 0.0;
-                    orig_state = bro.OrderState;
-
-                    if (bro.OrderState != BrokerOrderState.PendingCancel)
-                    {
-                        bro.OrderState = BrokerOrderState.PendingCancel;
-                        _parent.FireOrderUpdated(bro, null, "canceling pstop");
-                    }
-
-
-                    ares = _parent.fxClient.ConvertStringToAccount(bro.OrderSymbol.Exchange);
-                    if (ares.Error)
-                    {
-                        res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
-                        return res;
-                    }
-
-                    acct = ares.ResultObject.FromOutChannel;
-
-                    tres = _parent.ResponseProcessor.ActivateAccountResponder(acct.AccountId);
-                    if (tres.Error)
-                    {
-                        res.setError(tres.Message, tres.FXClientResponse, tres.Disconnected);
-                        return res;
-                    }
-
-                    ////////////////////
-                    orders_to_send = 0;//FIX ME
-
-                    res = SubmitStopOrders(bpr, bro, acct);
-                    if (res.Error)
-                    {
-                        if (res.OrderMissing)
-                        {
-                            _log.captureDebug("stop order missing, but cancel allowed (assuming a hit is incoming)");
-                            res = new FXClientResult();
+            try
+            {
+                switch (oid.Type)
+                {//handle update to the stop/target order here...there were no trades/orders to adjust
+                    case IDType.Stop:
+                        #region update position stop
+                        if (bpr.StopOrder == null)
+                        {//canceling an order which is already gone...allow it, but indicate the missing order
+                            _log.captureDebug("stop order not found, but cancel allowed (assuming a hit is incoming)");
                             res.OrderMissing = true;
                             return res;
                         }
-                        else if (res.OrdersSent == 0)
+
+                        bro = bpr.StopOrder.BrokerOrder;
+                        bro.StopPrice = 0.0;
+                        orig_state = bro.OrderState;
+
+                        if (bro.OrderState != BrokerOrderState.PendingCancel)
                         {
-                            bro.OrderState = orig_state;
-                            _parent.FireOrderUpdated(bro, null, "failing pstop cancel");
-                            if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
-                            return res;
+                            bro.OrderState = BrokerOrderState.PendingCancel;
+                            _parent.FireOrderUpdated(bro, null, "canceling pstop");
                         }
-                        else if (res.OrdersSent < orders_to_send)
-                        {//FIX ME - what to do in this case....some orders were sent, but not all...
+
+                        ares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, bro));
+                        if (ares.Error)
+                        {
+                            res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
                             return res;
                         }
 
+                        ////////////////////
+                        orders_to_send = 0;//FIX ME
+                        acct = ares.ResultObject.FromOutChannel;
+                        res = SubmitStopOrders(bpr, bro, acct);
+                        if (res.Error)
+                        {
+                            if (res.OrderMissing)
+                            {
+                                _log.captureDebug("stop order missing, but cancel allowed (assuming a hit is incoming)");
+                                res = new FXClientResult();
+                                res.OrderMissing = true;
+                                return res;
+                            }
+                            else if (res.OrdersSent == 0)
+                            {
+                                bro.OrderState = orig_state;
+                                _parent.FireOrderUpdated(bro, null, "failing pstop cancel");
+                                if (ares.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
+                                return res;
+                            }
+                            else if (res.OrdersSent < orders_to_send)
+                            {//FIX ME - what to do in this case....some orders were sent, but not all...
+                                return res;
+                            }
+
+                            return res;
+                        }
+
+                        if (res.OrdersSent == 0)
+                        {
+                            bro.OrderState = BrokerOrderState.Cancelled;
+                            bpr.StopOrder = null;
+                            _parent.FireOrderUpdated(bro, null, "pstop cancelled");
+                            if (ares.TaskCompleted)
+                            { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
+
+                            FunctionResult fr = ClearAllFinalizedPositions();
+                            if (fr.Error)
+                            {
+                                res.setError(fr.Message, FXClientResponseType.Rejected, false);
+                                return res;
+                            }
+                        }
                         return res;
-                    }
-                    if (res.OrdersSent == 0)
-                    {
-                        bro.OrderState = BrokerOrderState.Cancelled;
-                        bpr.StopOrder = null;
-                        _parent.FireOrderUpdated(bro, null, "pstop cancelled");
-                        if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
-
-                        FunctionResult fr=ClearAllFinalizedPositions();
-                        if (fr.Error)
-                        {
-                            res.setError(fr.Message, FXClientResponseType.Rejected, false);
-                            return res;
-                        }
-                    }
-                    return res;
                     ////////////////////
-                    #endregion
-                case IDType.Target:
-                    #region update position target
-                    if (bpr.TargetOrder == null)
-                    {//canceling an order which is already gone...allow it, but indicate the missing order
-                        _log.captureDebug("target order not found, but cancel allowed (assuming a hit is incoming)");
-                        res.OrderMissing = true;
-                        return res;
-                    }
-
-                    bro = bpr.TargetOrder.BrokerOrder;
-                    bro.LimitPrice = 0.0;
-                    orig_state = bro.OrderState;
-
-                    if (bro.OrderState != BrokerOrderState.PendingCancel)
-                    {
-                        bro.OrderState = BrokerOrderState.PendingCancel;
-                        _parent.FireOrderUpdated(bro, null, "canceling ptarget");
-                    }
-
-                    ares = _parent.fxClient.ConvertStringToAccount(bro.OrderSymbol.Exchange);
-                    if (ares.Error)
-                    {
-                        res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
-                        return res;
-                    }
-
-                    acct = ares.ResultObject.FromOutChannel;
-
-                    tres = _parent.ResponseProcessor.ActivateAccountResponder(acct.AccountId);
-                    if (tres.Error)
-                    {
-                        res.setError(tres.Message, tres.FXClientResponse, tres.Disconnected);
-                        return res;
-                    }
-                    
-                    
-
-                    ////////////////////
-                    orders_to_send = 0;//FIX ME
-
-                    res = SubmitTargetOrders(bpr, bro, acct);
-                    if (res.Error)
-                    {
-                        if (res.OrderMissing)
-                        {
-                            _log.captureDebug("target order missing, but cancel allowed (assuming a hit is incoming)");
-                            res = new FXClientResult();
+                        #endregion
+                    case IDType.Target:
+                        #region update position target
+                        if (bpr.TargetOrder == null)
+                        {//canceling an order which is already gone...allow it, but indicate the missing order
+                            _log.captureDebug("target order not found, but cancel allowed (assuming a hit is incoming)");
                             res.OrderMissing = true;
                             return res;
                         }
-                        else if (res.OrdersSent == 0)
+
+                        bro = bpr.TargetOrder.BrokerOrder;
+                        bro.LimitPrice = 0.0;
+                        orig_state = bro.OrderState;
+
+                        if (bro.OrderState != BrokerOrderState.PendingCancel)
                         {
-                            bro.OrderState = orig_state;
-                            _parent.FireOrderUpdated(bro, null, "failing ptarget cancel");
-                            if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
-                            return res;
+                            bro.OrderState = BrokerOrderState.PendingCancel;
+                            _parent.FireOrderUpdated(bro, null, "canceling ptarget");
                         }
-                        else if (res.OrdersSent < orders_to_send)
-                        {//FIX ME - what to do in this case....some orders were sent, but not all...
+
+                        ares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, bro));
+                        if (ares.Error)
+                        {
+                            res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
                             return res;
                         }
 
+
+                        ////////////////////
+                        orders_to_send = 0;//FIX ME
+                        acct = ares.ResultObject.FromOutChannel;
+                        res = SubmitTargetOrders(bpr, bro, acct);
+                        if (res.Error)
+                        {
+                            if (res.OrderMissing)
+                            {
+                                _log.captureDebug("target order missing, but cancel allowed (assuming a hit is incoming)");
+                                res = new FXClientResult();
+                                res.OrderMissing = true;
+                                return res;
+                            }
+                            else if (res.OrdersSent == 0)
+                            {
+                                bro.OrderState = orig_state;
+                                _parent.FireOrderUpdated(bro, null, "failing ptarget cancel");
+                                if (ares.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
+                                return res;
+                            }
+                            else if (res.OrdersSent < orders_to_send)
+                            {//FIX ME - what to do in this case....some orders were sent, but not all...
+                                return res;
+                            }
+
+                            return res;
+                        }
+                        if (res.OrdersSent == 0)
+                        {
+                            bro.OrderState = BrokerOrderState.Cancelled;
+                            bpr.TargetOrder = null;
+                            _parent.FireOrderUpdated(bro, null, "cancel ptarget");
+                            if (ares.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
+
+                            FunctionResult fr = ClearAllFinalizedPositions();
+                            if (fr.Error)
+                            {
+                                res.setError(fr.Message, FXClientResponseType.Rejected, false);
+                                return res;
+                            }
+                        }
                         return res;
-                    }
-                    if (res.OrdersSent == 0)
-                    {
-                        bro.OrderState = BrokerOrderState.Cancelled;
-                        bpr.TargetOrder = null;
-                        _parent.FireOrderUpdated(bro, null, "cancel ptarget");
-                        if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(acct.AccountId); }
-
-                        FunctionResult fr=ClearAllFinalizedPositions();
-                        if (fr.Error)
-                        {
-                            res.setError(fr.Message, FXClientResponseType.Rejected, false);
-                            return res;
-                        }
-                    }
-                    return res;
                     ////////////////////
-                    #endregion
-                default:
-                    res.setError("Unable to process order id prefix order ID '" + oid.ID + "'.",FXClientResponseType.Rejected,false);
-                    return res;
+                        #endregion
+                    default:
+                        res.setError("Unable to process order id prefix order ID '" + oid.ID + "'.", FXClientResponseType.Rejected, false);
+                        return res;
+                }
+            }
+            catch (Exception e)
+            {
+                _log.captureException(e);
+                res.setError("UNEXPECTED EXCEPTION - " + e.Message, FXClientResponseType.Invalid, false);
+                return res;
             }
         }
         public FXClientResult CancelSpecificOrder(IDString oid)
@@ -4243,7 +5603,7 @@ namespace RightEdgeOandaPlugin
             }
             BrokerPositionRecord bpr = fetch_bpr.ResultObject;
 
-            if (! bpr.TradeRecords.ContainsKey(oid) )
+            if (!bpr.TradeRecords.ContainsKey(oid))
             {
                 res.setError("Unable to locate trade record for specific order cancel. : oid='" + oid.ID + "'", FXClientResponseType.Rejected, false);
                 res.OrderMissing = true;
@@ -4275,17 +5635,10 @@ namespace RightEdgeOandaPlugin
             #endregion
 
             #region oanda close order
-            FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(bro.OrderSymbol.Exchange);
+            FXClientTaskObjectResult<AccountResult> ares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, bro));
             if (ares.Error)
             {
                 res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
-                return res;
-            }
-
-            FXClientTaskResult tres = _parent.ResponseProcessor.ActivateAccountResponder(ares.ResultObject.FromOutChannel.AccountId);
-            if (tres.Error)
-            {
-                res.setError(tres.Message, tres.FXClientResponse, tres.Disconnected);
                 return res;
             }
 
@@ -4293,20 +5646,93 @@ namespace RightEdgeOandaPlugin
             if (lores.Error)
             {
                 res.setError("Unable to locate the corresponding oanda broker order for id '" + oid.ID + "'.", lores.FXClientResponse, lores.Disconnected);
-                if (tres.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(ares.ResultObject.FromOutChannel.AccountId); }
+                if (ares.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(ares.ResultObject.FromOutChannel.AccountId); }
                 return res;
             }
 
             return _parent.fxClient.SendOAClose(ares.ResultObject.FromOutChannel, lores.ResultObject);
             #endregion
         }
-        #endregion
 
+        public FXClientResult CancelAllOrders()
+        {
+            FXClientResult res = new FXClientResult();
+
+            foreach (int act_id in _accounts.Accounts.Keys)
+            {
+                BrokerSymbolRecords bsr = _accounts.Accounts[act_id];
+                FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(act_id.ToString());
+                if (ares.Error)
+                {
+                    res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
+                    return res;
+                }
+
+                Account acct = ares.ResultObject.FromOutChannel;
+                foreach (string pos_key in bsr.Keys)
+                {
+                    foreach (string bpr_key in bsr[pos_key].Positions.Keys)
+                    {
+                        BrokerPositionRecord bpr = bsr[pos_key].Positions[bpr_key];
+                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                        {
+                            TradeRecord tr = bpr.TradeRecords[tr_key];
+                            BrokerOrder bro = tr.openOrder.BrokerOrder;
+
+                            #region verify order type and state
+                            if (bro.OrderType != OrderType.Limit)
+                            {//FIX ME <-- is this right? should CancelAllOrders() close ALL pending AND open??
+                                _log.captureDebug("  skipping open order type '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
+                                continue;
+                            }
+
+                            if (bro.OrderState != BrokerOrderState.Submitted)
+                            {//FIX ME <-- is this right? should CancelAllOrders() close ALL pending AND open??
+                                _log.captureDebug("  skipping open order state '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
+                                continue;
+                            }
+                            #endregion
+
+                            #region oanda close limit order
+                            FXClientObjectResult<LimitOrder> fres = _parent.fxClient.GetOrderWithID(acct, tr.OrderID.Num);
+                            if (fres.Error)
+                            {
+                                if (fres.OrderMissing)
+                                {
+                                    _log.captureDebug("  skipping order '" + tr.OrderID.ID + "', it's gone missing (probably filled).");
+                                    continue;
+                                }
+
+                                res.setError(fres.Message, fres.FXClientResponse, fres.Disconnected);
+                                return res;
+                            }
+                            FXClientResult subres = _parent.fxClient.SendOAClose(acct, fres.ResultObject);
+                            if (subres.Error)
+                            {
+                                if (fres.OrderMissing)
+                                {
+                                    _log.captureDebug("  skipping order '" + tr.OrderID.ID + "', it's gone missing (probably filled).");
+                                    continue;
+                                }
+
+                                return subres;
+                            }
+                            #endregion
+                        }
+                    }
+                }
+            }
+
+            res.FXClientResponse = FXClientResponseType.Accepted;
+            return res;
+        }
+        #endregion
 
         #region account transaction handler
         public FXClientTaskResult HandleAccountTransaction(ResponseRecord response)
         {
             FXClientTaskResult result = new FXClientTaskResult();
+
             result.TaskCompleted = true;
             try
             {
@@ -4333,10 +5759,10 @@ namespace RightEdgeOandaPlugin
                         FXClientObjectResult<Fill> fillres = _parent.fxClient.GenerateFillFromTransaction(trans, response.BaseCurrency);
                         if (fillres.Error)
                         {
-                            result.setError(fillres.Message,fillres.FXClientResponse,fillres.Disconnected);
+                            result.setError(fillres.Message, fillres.FXClientResponse, fillres.Disconnected);
                             return result;
                         }
-                        addFillrecord(trans.Base + "/" + trans.Quote, fillres.ResultObject, trans.TransactionNumber);
+                        _fill_queue.AddNewFillRecord(trans.Base + "/" + trans.Quote, fillres.ResultObject, trans.TransactionNumber, trans.Link);
                         return result;//wait for the "Order Fulfilled" event to finalize the original limit order
                     }
 
@@ -4378,47 +5804,133 @@ namespace RightEdgeOandaPlugin
                 }
                 else
                 {//transaction is linked to the open order
+                    string oclabel = "Order Cancel";
+                    int oclabel_len = oclabel.Length;
                     #region open order linked id match
                     if (desc == "Order Fulfilled")
                     {//this transaction is a notice that a limit order has been filled
                         #region limit order filled
-                        //make sure this openOrder is an unfilled limit
-                        if (tr.openOrder.BrokerOrder.OrderType != OrderType.Limit)
-                        {//what the heck?!?
+
+                        if (tr.openOrder.BrokerOrder.OrderType == OrderType.Limit)
+                        {
+                            FunctionObjectResult<FillRecord> fillres;
+
+                            switch (tr.openOrder.BrokerOrder.OrderState)
+                            {
+                                case BrokerOrderState.Submitted:
+                                    _log.captureDebug("    looking for fill to submitted limit order id='" + tr.openOrder.BrokerOrder.OrderId + "' size ='" + tr.openOrder.BrokerOrder.Shares + "'");
+                                    fillres = _fill_queue.FindOpenFill(fetch_bpr.SymbolName, tr.openOrder.BrokerOrder.OrderId, (int)tr.openOrder.BrokerOrder.Shares, _log);
+                                    if (fillres.Error)
+                                    {
+                                        result.setError(fillres.Message);
+                                        return result;
+                                    }
+
+                                    //if the fill record qty == limit order qty && queue count==1 then fill ok, qty ok
+                                    if (tr.openOrder.BrokerOrder.Shares == fillres.ResultObject.Fill.Quantity)
+                                    {
+                                        if (_fill_queue.QueueCount(fetch_bpr.SymbolName) != 0)
+                                        {//error
+                                            result.setError("fill matched order quantity, but fills remain in the queue");
+                                            return result;
+                                        }
+                                        if (fillres.ResultObject.LinkId == "0")
+                                        {//standard full fill hit with no linked orders
+                                            tr.openOrder.FillId = fillres.ResultObject.Id;
+                                            _parent.RESendFilledOrder(fillres.ResultObject.Fill, tr.openOrder.BrokerOrder, "limit order fullfilment");
+                                            return result;
+                                        }
+                                        else//LinkID != "0"
+                                        {//target order fully filled by matching order
+                                            //send target order straight to close
+
+                                            //FIX ME - setup and fill the target's close order
+                                            BrokerOrder tbo = new BrokerOrder();//<-- can't really do this...RE will baulk..
+                                            tbo.OrderSymbol = fetch_bpr.ResultObject.Symbol;
+
+                                            Fill tcfill = new Fill();
+                                            tr.closeOrder = new OrderRecord(tbo, false);
+                                            _parent.RESendFilledOrder(tcfill, tr.closeOrder.BrokerOrder, "limit order filled open order");
+
+                                            //send the matched order to close with the target price
+                                            PositionFetchResult fetch_mbpr = fetchBrokerPositionRecordByTradeID(fillres.ResultObject.LinkId);
+                                            BrokerPositionRecord mbpr = fetch_mbpr.ResultObject;
+                                            TradeRecord mtr = mbpr.TradeRecords[new IDString(fillres.ResultObject.LinkId)];
+
+                                            //FIX ME - setup and fill the matched close order
+                                            BrokerOrder mbo = new BrokerOrder();//<-- can't really do this...RE will baulk..
+                                            mbo.OrderSymbol = mbpr.Symbol;
+                                            Fill mcfill = new Fill();
+                                            mtr.closeOrder = new OrderRecord(mbo, false);
+                                            _parent.RESendFilledOrder(mcfill, mtr.closeOrder.BrokerOrder, "open order closed on limit fill");
+
+                                            return result;
+                                        }
+                                    }
+                                    //if the fill record qty < limit order qty && queue count > 1 then fill ok, qty change
+                                    else if (tr.openOrder.BrokerOrder.Shares > fillres.ResultObject.Fill.Quantity)
+                                    {
+                                        FillRecord linkless_fill = fillres.ResultObject;
+                                        //be sure there are more fill records queued up...
+                                        if (_fill_queue.QueueCount(fetch_bpr.SymbolName) < 1)
+                                        {
+                                            result.setError("fill smaller than order, but no fills remain in the queue");
+                                            return result;
+                                        }
+
+                                        //check the qty's to be sure the fills add up to a "full fill"
+                                        if (tr.openOrder.BrokerOrder.Shares != _fill_queue.QueueUnitTotal(fetch_bpr.SymbolName))
+                                        {
+                                            result.setError("fills don't add up to ordered shares.");
+                                            return result;
+                                        }
+
+                                        //change main order qty
+                                        tr.openOrder.BrokerOrder.Shares = linkless_fill.Fill.Quantity;
+
+                                        tr.openOrder.FillId = fillres.ResultObject.Id;
+                                        _parent.RESendFilledOrder(fillres.ResultObject.Fill, tr.openOrder.BrokerOrder, "limit order fullfilment");
+
+                                        do
+                                        {
+                                            fillres = _fill_queue.GetNextFill(fetch_bpr.SymbolName);
+                                            if (fillres.Error)
+                                            {
+                                                result.setError(fillres.Message);
+                                                return result;
+                                            }
+
+                                            //look for the order with an id or linkid of fill.LinkId
+                                            PositionFetchResult lp = fetchBrokerPositionRecordByTradeID(fillres.ResultObject.LinkId);
+                                            if (lp.Error)
+                                            {
+                                                result.setError(lp.Message);
+                                                return result;
+                                            }
+
+                                            //FIX ME <-----
+                                            //process this fill on the found order
+                                            //FIX ME <-----
+
+                                        } while (_fill_queue.QueueCount(fetch_bpr.SymbolName) > 0);
+                                        return result;
+                                    }
+                                    else// shares < fill.qty
+                                    {//should this be the same as '>' above??
+                                        result.setError("Shares smaller than fill qty.");
+                                        return result;
+                                    }
+                                default:
+                                    result.setError("TBI - this should be more thorough...not all states are unusable, and those that are need an Update()");
+                                    return result;
+                            }
+                        }
+                        else
+                        {
                             result.setError("Order fullfilment event received on non-limit order id '" + tr.openOrder.BrokerOrder.OrderId + "' type '" + tr.openOrder.BrokerOrder.OrderType + "'.");
                             return result;
                         }
 
-                        if (tr.openOrder.BrokerOrder.OrderState != BrokerOrderState.Submitted)
-                        {//the order was filled at oanda and is in a bad way in RE....
-                            result.setError("TBI - this should be more thorough...not all states are unusable, and those that are need an Update()");
-                            return result;
-                        }
-
-                        if (!_fill_queue.ContainsKey(fetch_bpr.SymbolName))
-                        {//no queued up fills for this symbol!!
-                            result.setError("No fill record in the queue for symbol '" + fetch_bpr.SymbolName + "'.");
-                            return result;
-                        }
-
-                        //do a lookup on the queue of fill records for a fill that matches (size, etc..)this openOrder
-                        foreach (FillRecord fr in _fill_queue[fetch_bpr.SymbolName])
-                        {
-                            if (fr.Fill.Quantity == tr.openOrder.BrokerOrder.Shares)
-                            {
-                                tr.openOrder.FillId = fr.Id;
-
-                                //remove the fill record from the queue
-                                _fill_queue[fetch_bpr.SymbolName].Remove(fr);
-                                if (_fill_queue[fetch_bpr.SymbolName].Count == 0) { _fill_queue.Remove(fetch_bpr.SymbolName); }
-
-                                //update the openOrder as filled
-                                _parent.RESendFilledOrder(fr.Fill, tr.openOrder.BrokerOrder, "limit order fullfilment");
-                                return result;
-                            }
-                        }
-                        result.setError("No fill record for the order id '" + tr.openOrder.BrokerOrder.OrderId + "' symbol '" + fetch_bpr.SymbolName + "'.");
-                        return result;
                         #endregion
                     }
                     else if (desc == "Cancel Order")
@@ -4427,7 +5939,32 @@ namespace RightEdgeOandaPlugin
                         tr.openOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
                         _parent.FireOrderUpdated(tr.openOrder.BrokerOrder, null, "order canceled");
 
-                        FXClientResult fres=finalizePositionExit(pos,"cancel order");
+                        FXClientResult fres = finalizePositionExit(pos, "cancel order");
+                        if (fres.Error)
+                        {
+                            result.setError(fres.Message, fres.FXClientResponse, fres.Disconnected);
+                        }
+                        return result;
+                        #endregion
+                    }
+                    else if ( desc.Length > oclabel_len && desc.Substring(0, oclabel_len) == oclabel )
+                    {
+                        #region order canceled by the server
+                        int si, ei;
+                        si = desc.IndexOf('(')+1;
+                        ei = desc.LastIndexOf(')');
+                        string reason;
+                        if(si>=0 && si < desc.Length && ei>=0 && ei-si< desc.Length)
+                        {reason= "{" + desc.Substring(si, ei-si) + "}";}
+                        else
+                        {reason = "{}";}
+
+                        _log.captureDebug("order canceled reason : '" + reason + "'");
+                        
+                        tr.openOrder.BrokerOrder.OrderState = BrokerOrderState.Cancelled;
+                        _parent.FireOrderUpdated(tr.openOrder.BrokerOrder, null, "order canceled" + reason);
+
+                        FXClientResult fres = finalizePositionExit(pos, "order canceled" + reason);
                         if (fres.Error)
                         {
                             result.setError(fres.Message, fres.FXClientResponse, fres.Disconnected);
@@ -4616,9 +6153,9 @@ namespace RightEdgeOandaPlugin
                         if (tr.closeOrder != null)
                         {
                             BrokerOrder cbo = tr.closeOrder.BrokerOrder;
-                            bool isre=tr.closeOrder.IsRightEdgeOrder;
+                            bool isre = tr.closeOrder.IsRightEdgeOrder;
                             tr.closeOrder = null;
-                            
+
                             if (isre)
                             {
                                 cbo.OrderState = BrokerOrderState.Cancelled;
@@ -4659,7 +6196,7 @@ namespace RightEdgeOandaPlugin
 
                         if (tr.closeOrder != null)
                         {
-                            BrokerOrder cbo=tr.closeOrder.BrokerOrder;
+                            BrokerOrder cbo = tr.closeOrder.BrokerOrder;
                             bool isre = tr.closeOrder.IsRightEdgeOrder;
                             tr.closeOrder = null;
                             if (isre)
@@ -4695,6 +6232,19 @@ namespace RightEdgeOandaPlugin
                         return result;
                         #endregion
                     }
+                    else if (desc == "Buy Order Filled" || desc == "Sell Order Filled")
+                    {
+                        _log.captureDebug("    limit fill matched market order (num='" + trans.TransactionNumber + "',link='" + trans.Link + "'). : '" + desc + "'");
+                        FXClientObjectResult<Fill> fillres = _parent.fxClient.GenerateFillFromTransaction(trans, response.BaseCurrency);
+                        if (fillres.Error)
+                        {
+                            result.setError(fillres.Message, fillres.FXClientResponse, fillres.Disconnected);
+                            return result;
+                        }
+
+                        _fill_queue.AddNewFillRecord(trans.Base + "/" + trans.Quote, fillres.ResultObject, trans.TransactionNumber, trans.Link);
+                        return result;
+                    }
                     else
                     {
                         result.setError("Unknown link matched transaction description (num='" + trans.TransactionNumber + "',link='" + trans.Link + "'). : '" + desc + "'");
@@ -4708,6 +6258,225 @@ namespace RightEdgeOandaPlugin
                 _log.captureException(e);
                 result.setError("Unhandled exception : " + e.Message);
                 return result;
+            }
+        }
+        #endregion
+
+        #region orderbook state inquiry functions
+        public List<BrokerOrder> GetOpenBrokerOrderList()
+        {
+            List<BrokerOrder> list = new List<BrokerOrder>();
+            foreach (int act_id in _accounts.Accounts.Keys)
+            {
+                BrokerSymbolRecords bsr = _accounts.Accounts[act_id];
+
+                foreach (string sym_key in bsr.Keys)
+                {
+                    BrokerPositionRecords bprl = bsr[sym_key];
+                    foreach (string bpr_key in bprl.Positions.Keys)
+                    {
+                        BrokerPositionRecord bpr = bprl.Positions[bpr_key];
+
+                        //FIX ME - what order states/types does RE really want here...
+
+                        if (bpr.StopOrder != null) { list.Add(bpr.StopOrder.BrokerOrder.Clone()); }
+                        if (bpr.TargetOrder != null) { list.Add(bpr.TargetOrder.BrokerOrder.Clone()); }
+                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                        {
+                            TradeRecord tr = bpr.TradeRecords[tr_key];
+                            list.Add(tr.openOrder.BrokerOrder.Clone());
+                        }
+                    }//end of Positions loop
+                }//end of symbol loop
+            }//end of accounts loop
+            return list;
+        }
+        
+        public BrokerOrder GetOpenBrokerOrder(string id)
+        {
+            //it may be better to analyze the id and call the position/trade fetch routines instead...
+            //but for now this works fine...
+
+            foreach (int act_id in _accounts.Accounts.Keys)
+            {
+                BrokerSymbolRecords bsr = _accounts.Accounts[act_id];
+
+                foreach (string sym_key in bsr.Keys)
+                {
+                    BrokerPositionRecords bprl = bsr[sym_key];
+                    foreach (string bpr_key in bprl.Positions.Keys)
+                    {
+                        BrokerPositionRecord bpr = bprl.Positions[bpr_key];
+                        if (bpr.StopOrder != null && bpr.StopOrder.BrokerOrder != null && bpr.StopOrder.BrokerOrder.OrderId == id)
+                        { return (bpr.StopOrder.BrokerOrder); }
+                        else if (bpr.TargetOrder != null && bpr.TargetOrder.BrokerOrder != null && bpr.TargetOrder.BrokerOrder.OrderId == id)
+                        { return (bpr.TargetOrder.BrokerOrder); }
+
+                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
+                        {
+                            TradeRecord tr = bpr.TradeRecords[tr_key];
+                            if (tr.openOrder.BrokerOrder!=null && tr.openOrder.BrokerOrder.OrderId == id)
+                            { return (tr.openOrder.BrokerOrder); }
+                        }//end of trade record loop
+                    }//end of position loop
+                }//end of symbol loop
+            }//end of account loop
+            return null;
+        }
+
+        public FunctionObjectResult<int> GetSymbolShares(string symbol_name)
+        {
+            FunctionObjectResult<int> res = new FunctionObjectResult<int>();
+            res.ResultObject = 0;
+            int n = 0;
+
+            try
+            {
+                string l_act = _trade_entities.GetAccount(TradeEntityID.CreateID(_opts.TradeEntityName, symbol_name, PositionType.Long));
+                string s_act = _trade_entities.GetAccount(TradeEntityID.CreateID(_opts.TradeEntityName, symbol_name, PositionType.Short));
+
+                int act_id = int.Parse(l_act);
+                if (_accounts.Accounts.ContainsKey(act_id))
+                {
+                    BrokerSymbolRecords bsr = _accounts.Accounts[act_id];
+                    if (bsr.ContainsKey(symbol_name))
+                    {
+                        n = bsr[symbol_name].getTotalSize();
+                    }
+                }
+                act_id = int.Parse(s_act);
+                if (_accounts.Accounts.ContainsKey(act_id))
+                {
+                    BrokerSymbolRecords bsr = _accounts.Accounts[act_id];
+                    if (bsr.ContainsKey(symbol_name))
+                    {
+                        n -= bsr[symbol_name].getTotalSize();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                res.setError(e.Message);
+                return res;
+            }
+
+            res.ResultObject = n;
+            return res;
+        }
+
+        public FXClientObjectResult<double> GetMarginAvailable()
+        {
+            if (_opts.AccountValuesEnabled)
+            {
+                FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+                res.ResultObject = 0.0;
+
+                FXClientObjectResult<List<AccountResult>> getres = _parent.fxClient.GetFullAccountsList();
+                if (getres.Error)
+                {
+                    res.setError(getres.Message, getres.FXClientResponse, getres.Disconnected);
+                    return res;
+                }
+                List<AccountResult> act_list = getres.ResultObject;
+
+                foreach (AccountResult ar in act_list)
+                {
+                    Account a = ar.FromOutChannel;
+                    double ma, mr, mu;
+                    ma = mr = mu = 0.0;
+
+                    FXClientObjectResult<double> mres = _parent.fxClient.GetMarginAvailable(a);
+                    if (mres.Error)
+                    {
+                        res.setError(mres.Message, mres.FXClientResponse, mres.Disconnected);
+                        return res;
+                    }
+                    ma = mres.ResultObject;
+                    res.ResultObject += ma;
+
+                    mres = _parent.fxClient.GetMarginRate(a);
+                    if (mres.Error)
+                    {
+                        res.setError(mres.Message, mres.FXClientResponse, mres.Disconnected);
+                        return res;
+                    }
+                    mr = mres.ResultObject;
+
+                    mres = _parent.fxClient.GetMarginUsed(a);
+                    if (mres.Error)
+                    {
+                        res.setError(mres.Message, mres.FXClientResponse, mres.Disconnected);
+                        return res;
+                    }
+                    mu = mres.ResultObject;
+
+                    _account_values.SetMargin(a.AccountId.ToString(), a.HomeCurrency, ma, mu, mr);
+                }
+
+                FunctionResult fres = _account_values.saveSettings<AccountValuesStore>();
+                if (fres.Error) { res.setError(fres.Message, FXClientResponseType.Invalid, false); }
+                return res;
+            }
+            else
+            {//FIX ME - this should still follow the trade entities default account mechanism...not just go straight to the opts..
+                FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(_opts.DefaultAccount);
+                if (ares.Error)
+                {
+                    FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+                    res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
+                    return res;
+                }
+
+                return _parent.fxClient.GetMarginAvailable(ares.ResultObject.FromOutChannel);
+            }
+        }
+
+        public FXClientObjectResult<double> GetBuyingPower()
+        {
+            if (_opts.AccountValuesEnabled)
+            {
+                FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+                res.ResultObject = 0.0;
+
+                FXClientObjectResult<List<AccountResult>> getres = _parent.fxClient.GetFullAccountsList();
+                if (getres.Error)
+                {
+                    res.setError(getres.Message, getres.FXClientResponse, getres.Disconnected);
+                    return res;
+                }
+                List<AccountResult> act_list = getres.ResultObject;
+
+                foreach (AccountResult ar in act_list)
+                {
+                    Account a = ar.FromOutChannel;
+
+                    FXClientObjectResult<double> bpres = _parent.fxClient.GetBalance(a);
+                    if (bpres.Error)
+                    {
+                        res.setError(bpres.Message, bpres.FXClientResponse, bpres.Disconnected);
+                        return res;
+                    }
+
+                    res.ResultObject += bpres.ResultObject;
+
+                    _account_values.SetBalance(a.AccountId.ToString(), a.HomeCurrency, bpres.ResultObject);
+                }
+
+                FunctionResult fres = _account_values.saveSettings<AccountValuesStore>();
+                if (fres.Error) { res.setError(fres.Message, FXClientResponseType.Invalid, false); }
+                return res;
+            }
+            else
+            {//FIX ME - this should still follow the trade entities default account mechanism...not just go straight to the opts..
+                FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(_opts.DefaultAccount);
+                if (ares.Error)
+                {
+                    FXClientObjectResult<double> res = new FXClientObjectResult<double>();
+                    res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
+                    return res;
+                }
+
+                return _parent.fxClient.GetBalance(ares.ResultObject.FromOutChannel);
             }
         }
         #endregion
@@ -4787,11 +6556,11 @@ namespace RightEdgeOandaPlugin
         {
             FunctionResult res = new FunctionResult();
 
-            List<int> act_keys = new List<int>(_accounts.Keys);
+            List<int> act_keys = new List<int>(_accounts.Accounts.Keys);
             foreach (int act_id in act_keys)
             {
-                if (!_accounts.ContainsKey(act_id)) { continue; }
-                BrokerSymbolRecords bsrl = _accounts[act_id];
+                if (!_accounts.Accounts.ContainsKey(act_id)) { continue; }
+                BrokerSymbolRecords bsrl = _accounts.Accounts[act_id];
                 List<string> sym_keys = new List<string>(bsrl.Keys);
                 foreach (string sym_id in sym_keys)
                 {
@@ -4809,12 +6578,12 @@ namespace RightEdgeOandaPlugin
                             foreach (IDString tr_id in bpr.TradeRecords.Keys)
                             {
                                 TradeRecord tr = bpr.TradeRecords[tr_id];
-                                if(tr.closeOrder != null)
+                                if (tr.closeOrder != null)
                                 {
                                     safe_to_remove = false;
                                     continue;
                                 }
-                                if ( tr.openOrder != null && !tr.openOrder.StopHit && !tr.openOrder.TargetHit )
+                                if (tr.openOrder != null && !tr.openOrder.StopHit && !tr.openOrder.TargetHit)
                                 {
                                     safe_to_remove = false;
                                     continue;
@@ -4838,7 +6607,7 @@ namespace RightEdgeOandaPlugin
                                 }
                                 if (bsrl.Count == 0)
                                 {
-                                    if (!_accounts.Remove(act_id))
+                                    if (!_accounts.Accounts.Remove(act_id))
                                     {
                                         res.setError("Unable to remove account record '" + act_id + "'");
                                         return res;
@@ -4853,213 +6622,61 @@ namespace RightEdgeOandaPlugin
         }
         #endregion
 
-
-        #region XML Serialization
-        private string _fname = "";
-        [XmlIgnore, Browsable(false)]
-        public string OrderLogFileName { set { _fname = value; } get { return (_fname); } }
-
-        public void saveSettings()
+        public FunctionResult saveSettings()
         {
-            XmlSerializer mySerializer = new XmlSerializer(typeof(OrderBook));
-            StreamWriter myWriter = new StreamWriter(_fname);
-            mySerializer.Serialize(myWriter, this);
-            myWriter.Close();
-            myWriter.Dispose();
+            _accounts.FileName = _opts.OrderLogFileName;
+            return _accounts.saveSettings<OrderBookData>();
         }
 
-        public static OrderBook loadSettings(string opt_fname)
+        public FunctionResult loadSettings(string opt_fname)
         {
-            XmlSerializer mySerializer = new XmlSerializer(typeof(OrderBook));
-            OrderBook ob;
-            FileStream myFileStream = null;
-            try
+            FunctionResult res = _accounts.loadSettings<OrderBookData>(opt_fname);
+            if (res.Error) { return res; }
+            return new FunctionResult();
+        }
+
+        private void SetOrderBookData(OrderBookData obd)
+        {
+            _accounts = obd;
+        }
+
+        public FunctionResult SetAccountState(BrokerAccountState accountState)
+        {//merge the info in accountState and this orderbook
+            _accounts.ClearREOwned();
+
+            FunctionResult res;
+            foreach (BrokerPosition p in accountState.Positions)
             {
-                myFileStream = new FileStream(opt_fname, FileMode.Open);
+                _log.captureDebug("StatePosition : sym=" + p.Symbol + "dir=" + p.Direction + " size=" + p.Size + " entry date=" + p.EntryDate + " entry price=" + p.EntryPrice + " margin=" + p.Margin + " shorted cash=" + p.ShortedCash);
+                //FIX ME - verify this order book contains a position record for the sym/dir
             }
-            catch (System.IO.IOException)
+            foreach (BrokerOrder o in accountState.PendingOrders)
             {
-                ob = new OrderBook();
-                ob.OrderLogFileName = opt_fname;
-                return (ob);
-            }
-            ob = (OrderBook)mySerializer.Deserialize(myFileStream);
-            myFileStream.Close();
-            myFileStream.Dispose();
-            ob.OrderLogFileName = opt_fname;
-            return (ob);
-        }
-        #endregion
-
-        public List<BrokerOrder> GetOpenBrokerOrderList()
-        {
-            List<BrokerOrder> list = new List<BrokerOrder>();
-            foreach (int act_id in _accounts.Keys)
-            {
-                BrokerSymbolRecords bsr = _accounts[act_id];
-
-                foreach (string sym_key in bsr.Keys)
-                {
-                    BrokerPositionRecords bprl = bsr[sym_key];
-                    foreach (string bpr_key in bprl.Positions.Keys)
-                    {
-                        BrokerPositionRecord bpr = bprl.Positions[bpr_key];
-                        
-                        //FIX ME - what order states/types does RE really want here...
-                        
-                        if (bpr.StopOrder != null) { list.Add(bpr.StopOrder.BrokerOrder.Clone()); }
-                        if (bpr.TargetOrder != null) { list.Add(bpr.TargetOrder.BrokerOrder.Clone()); }
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
-                        {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-                            list.Add(tr.openOrder.BrokerOrder.Clone());
-                        }
-                    }//end of Positions loop
-                }//end of symbol loop
-            }//end of accounts loop
-            return list;
-        }
-
-        public BrokerOrder GetOpenBrokerOrder(string id)
-        {
-            //it may be better to analyze the id and call the position/trade fetch routines instead...
-            //but for now this works fine...
-
-            foreach (int act_id in _accounts.Keys)
-            {
-                BrokerSymbolRecords bsr = _accounts[act_id];
-
-                foreach (string sym_key in bsr.Keys)
-                {
-                    BrokerPositionRecords bprl = bsr[sym_key];
-                    foreach (string bpr_key in bprl.Positions.Keys)
-                    {
-                        BrokerPositionRecord bpr = bprl.Positions[bpr_key];
-                        if (bpr.StopOrder != null && bpr.StopOrder.BrokerOrder.OrderId == id)
-                        { return (bpr.StopOrder.BrokerOrder); }
-                        else if (bpr.TargetOrder != null && bpr.TargetOrder.BrokerOrder.OrderId == id)
-                        { return (bpr.TargetOrder.BrokerOrder); }
-
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
-                        {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-                            if (tr.openOrder.BrokerOrder.OrderId == id)
-                            { return (tr.openOrder.BrokerOrder); }
-                        }//end of trade record loop
-                    }//end of position loop
-                }//end of symbol loop
-            }//end of account loop
-            return null;
-        }
-
-        public int GetSymbolShares(string symbol_name)
-        {
-            //FIX ME <-- look to a property for the account number here
-            foreach (int act_id in _accounts.Keys)
-            {//for now just use the first one returned in the hash keys...there's probably only one anyway...
-                BrokerSymbolRecords bsr = _accounts[act_id];
-
-                if (!bsr.ContainsKey(symbol_name)) { return (0); }
-                BrokerPositionRecords bprl = bsr[symbol_name];
-
-                return bprl.getTotalSize();
-            }
-            return 0;
-        }
-
-        public FXClientObjectResult<double> GetMarginAvailable()
-        {
-            //FIX ME <-- look to a property for the account number here
-            FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount("");
-            if (ares.Error)
-            {
-                FXClientObjectResult<double> res = new FXClientObjectResult<double>();
-                res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
-                return res;
+                _log.captureDebug("StateOrder : sym=" + o.OrderSymbol + " type=" + o.OrderType + " pid=" + o.PositionID + " oid=" + o.OrderId + " trans type=" + o.TransactionType);
+                res = _accounts.SetBrokerOrder(o);
+                if (res.Error) { return res; }
             }
 
-            return _parent.fxClient.GetMarginAvailable(ares.ResultObject.FromOutChannel);
+            FunctionResult vres = _accounts.VerifyREOwned();
+            if (vres.Error) { return vres; }
+            return new FunctionResult();
         }
 
-        public FXClientResult CancelAllOrders()
+        public List<int> GetActiveAccountList()
         {
-            FXClientResult res = new FXClientResult();
-
-            foreach (int act_id in _accounts.Keys)
-            {
-                BrokerSymbolRecords bsr = _accounts[act_id];
-                FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(act_id.ToString());
-                if (ares.Error)
-                {
-                    res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
-                    return res;
-                }
-
-                Account acct = ares.ResultObject.FromOutChannel;
-                foreach (string pos_key in bsr.Keys)
-                {
-                    foreach (string bpr_key in bsr[pos_key].Positions.Keys)
-                    {
-                        BrokerPositionRecord bpr = bsr[pos_key].Positions[bpr_key];
-                        foreach (IDString tr_key in bpr.TradeRecords.Keys)
-                        {
-                            TradeRecord tr = bpr.TradeRecords[tr_key];
-                            BrokerOrder bro = tr.openOrder.BrokerOrder;
-
-                            #region verify order type and state
-                            if (bro.OrderType != OrderType.Limit)
-                            {//FIX ME <-- is this right? should CancelAllOrders() close ALL pending AND open??
-                                _log.captureDebug("  skipping open order type '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
-                                continue;
-                            }
-
-                            if (bro.OrderState != BrokerOrderState.Submitted)
-                            {//FIX ME <-- is this right? should CancelAllOrders() close ALL pending AND open??
-                                _log.captureDebug("  skipping open order state '" + bro.OrderState + "' id '" + bro.OrderId + "'.");
-                                continue;
-                            }
-                            #endregion
-
-                            #region oanda close limit order
-                            FXClientObjectResult<LimitOrder> fres = _parent.fxClient.GetOrderWithID(acct, tr.OrderID.Num);
-                            if (fres.Error)
-                            {
-                                if (fres.OrderMissing)
-                                {
-                                    _log.captureDebug("  skipping order '" + tr.OrderID.ID + "', it's gone missing (probably filled).");
-                                    continue;
-                                }
-                                
-                                res.setError(fres.Message, fres.FXClientResponse, fres.Disconnected);
-                                return res;
-                            }
-                            FXClientResult subres = _parent.fxClient.SendOAClose(acct, fres.ResultObject);
-                            if (subres.Error)
-                            {
-                                if (fres.OrderMissing)
-                                {
-                                    _log.captureDebug("  skipping order '" + tr.OrderID.ID + "', it's gone missing (probably filled).");
-                                    continue;
-                                }
-
-                                return subres;
-                            }
-                            #endregion
-                        }
-                    }
-                }
-            }
-
-            res.FXClientResponse = FXClientResponseType.Accepted;
-            return res;
+            List<int> l = new List<int>();
+            foreach (int a in _accounts.Accounts.Keys)
+            { l.Add(a); }
+            return l;
         }
     }
-    
 
     public class OandAPlugin : IService, IBarDataRetrieval, ITickRetrieval, IBroker
     {
         public OandAPlugin()
         {
+            _fx_client = new fxClientWrapper(this);
+
             //System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.TextWriterTraceListener("c:\\Storage\\src\\trace.log"));
             //System.Diagnostics.Trace.AutoFlush = true;
         }
@@ -5069,7 +6686,7 @@ namespace RightEdgeOandaPlugin
 
         private int _fail_ticket_num = 1;
 
-        private fxClientWrapper _fx_client = new fxClientWrapper();
+        private fxClientWrapper _fx_client;
         public fxClientWrapper fxClient { get { return (_fx_client); } }
 
         private ResponseProcessor _response_processor = null;
@@ -5079,11 +6696,11 @@ namespace RightEdgeOandaPlugin
         private ServiceConnectOptions _connected_as = ServiceConnectOptions.None;
 
         private List<int> _reconnect_account_ids = new List<int>();
-        
+
         private OrderBook _orderbook = new OrderBook();
         public OrderBook OrderBook { get { return (_orderbook); } }
 
-        
+
         private static BrokerLog _log = new BrokerLog();
         private static TickLog _tick_log = new TickLog();
         private static PluginLog _history_log = new PluginLog();
@@ -5104,12 +6721,13 @@ namespace RightEdgeOandaPlugin
                 _response_processor.ClearAccountResponders();
                 _response_processor = null;
             }
-            
+
             _fx_client.Disconnect();
         }
 
         #region RightEdge Interfaces
         #region IService Members
+        #region support members
         public string ServiceName()
         {
             return "Custom OandA Plugin";
@@ -5174,7 +6792,7 @@ namespace RightEdgeOandaPlugin
         // Get or set the server address if required.  It is
         // not needed in this example.
         public string ServerAddress { get { return null; } set { } }
-        
+
         // Get or set the server port if required.  It is
         // not needed in this example.
         public int Port { get { return 0; } set { } }
@@ -5243,24 +6861,25 @@ namespace RightEdgeOandaPlugin
             //	Return false if not using custom settings
             //	If using custom settings, show form.  If user cancels, return false.  If user accepts,
             //	update settings and return true.
-            OAPluginOptions topts= new OAPluginOptions(_opts);
+            OAPluginOptions topts = new OAPluginOptions(_opts);
             topts.loadRESettings(settings);
-            
+
             OandAPluginOptionsForm frm = new OandAPluginOptionsForm(topts);
             DialogResult res = frm.ShowDialog();
             if (res == DialogResult.Cancel)
             { return false; }
-            
+
             _opts = frm.Opts;
             return _opts.saveRESettings(ref settings);
         }
+        #endregion
 
         public bool Initialize(RightEdge.Common.SerializableDictionary<string, string> settings)
         {
             if (_opts == null) { _opts = new OAPluginOptions(); }
-            
-            bool r=_opts.loadRESettings(settings);
-            
+
+            bool r = _opts.loadRESettings(settings);
+
             if (!r) { _opts = new OAPluginOptions(); }
 
             _log.FileName = _opts.LogOptionsBroker.LogFileName;
@@ -5282,7 +6901,7 @@ namespace RightEdgeOandaPlugin
             _history_log.LogExceptions = _opts.LogOptionsHistory.LogExceptions;
 
             _log.LogReceiveOA = _opts.LogOandaReceive;
-            _log.LogReceiveRE =_opts.LogRightEdgeReceive;
+            _log.LogReceiveRE = _opts.LogRightEdgeReceive;
             _log.LogSendOA = _opts.LogOandaSend;
             _log.LogSendRE = _opts.LogRightEdgeSend;
 
@@ -5290,14 +6909,14 @@ namespace RightEdgeOandaPlugin
 
             _tick_log.LogTicks = _opts.LogTicks;
 
-            _orderbook.OrderLogFileName = _opts.OrderLogFileName;
-
             _orderbook.OAPluginOptions = _opts;
-            
+            _orderbook.OAPlugin = this;
+            _orderbook.BrokerLog = _log;
+
             return r;
         }
 
-        
+
         // Implements connection to a service functionality.
         // RightEdge will call this function before requesting
         // service data.  Return true if the connection is
@@ -5321,7 +6940,7 @@ namespace RightEdgeOandaPlugin
             if (_fx_client.OAPluginOptions == null) { _fx_client.OAPluginOptions = _opts; }
             if (_fx_client.Log == null) { _fx_client.Log = conlog; }
 
-            FXClientResult cres = _fx_client.Connect(connectOptions,_username,_password);
+            FXClientResult cres = _fx_client.Connect(connectOptions, _username, _password);
             if (cres.Error)
             {
                 _fx_client.Disconnect();
@@ -5334,14 +6953,14 @@ namespace RightEdgeOandaPlugin
                 if (_orderbook.OAPlugin == null) { _orderbook.OAPlugin = this; }
                 if (_orderbook.BrokerLog == null) { _orderbook.BrokerLog = _log; }
                 if (_fx_client.BrokerLog == null) { _fx_client.BrokerLog = _log; }
-                
+
                 //this is a broker connect, start up the response processor
                 if (_response_processor == null)
                 {
                     _response_processor = new ResponseProcessor(this, _log);
                     _response_processor.Start();
                 }
-                
+
                 if (_reconnect_account_ids.Count > 0)
                 {
                     foreach (int aid in _reconnect_account_ids)
@@ -5384,22 +7003,27 @@ namespace RightEdgeOandaPlugin
 
                 _orderbook.LogOrderBook("disconnecting");
 
-                if(!string.IsNullOrEmpty(_orderbook.OrderLogFileName))
+                if (!string.IsNullOrEmpty(_opts.OrderLogFileName))
                 {
-                    _orderbook.saveSettings();
+                    FunctionResult sres=_orderbook.saveSettings();
+                    if (sres.Error)
+                    {
+                        _log.captureError(sres.Message, "Disconnect Error");
+                        return false;
+                    }
                 }
             }
 
             FXClientResult res = _fx_client.Disconnect();
             if (res.Error)
             {
-                _log.captureError(res.Message,"Disconnect Error");
+                _log.captureError(res.Message, "Disconnect Error");
                 return false;
             }
             return true;
         }
 
-        private string _error_str=string.Empty;
+        private string _error_str = string.Empty;
         public void clearError() { _error_str = string.Empty; }
         // Return the last error encountered by the service.
         public string GetError()
@@ -5426,7 +7050,7 @@ namespace RightEdgeOandaPlugin
             {
                 int num_ticks = 500;
                 clearError();
-                
+
                 Interval interval = OandAUtils.convertToInterval(frequency);
                 CustomBarFrequency cbf = OandAUtils.convertToCustomBarFrequency(frequency);
 
@@ -5443,7 +7067,7 @@ namespace RightEdgeOandaPlugin
                 }
 
                 List<BarData> list = new List<BarData>();
-                FXClientObjectResult<ArrayList> hal =  _fx_client.GetHistory(new fxPair(symbol.Name), interval, num_ticks);
+                FXClientObjectResult<ArrayList> hal = _fx_client.GetHistory(new fxPair(symbol.Name), interval, num_ticks, true);
                 if (hal.Error)
                 {
                     if (hal.Disconnected)
@@ -5490,8 +7114,8 @@ namespace RightEdgeOandaPlugin
                             break;
                         case DataFilterType.PriceActivity:
                             CandlePoint cp = hp.GetCandlePoint();
-                            double n=cp.Open;
-                            if(n==cp.Close && n==cp.Min && n==cp.Max)
+                            double n = cp.Open;
+                            if (n == cp.Close && n == cp.Min && n == cp.Max)
                             { drop_bar = true; }
                             break;
                         case DataFilterType.None:
@@ -5552,13 +7176,14 @@ namespace RightEdgeOandaPlugin
         }
         private void fireTickEvent(Symbol sym, TickData tick)
         {
-            _tick_log.captureTick(sym,tick);
+            _tick_log.captureTick(sym, tick);
             _gtd_event(sym, tick);
         }
 
-        private List<RateTicker> _rate_tickers= new List<RateTicker>();
+        private List<RateTicker> _rate_tickers = new List<RateTicker>();
+        public List<RateTicker> RateTickers { get { return (_rate_tickers); } }
 
-        public void handleRateTicker(RateTicker rt,fxRateEventInfo ei, fxEventManager em)
+        public void handleRateTicker(RateTicker rt, fxRateEventInfo ei, fxEventManager em)
         {
             try
             {
@@ -5608,7 +7233,7 @@ namespace RightEdgeOandaPlugin
         // that is requested by the user.
         public bool SetWatchedSymbols(List<Symbol> symbols)
         {
-            FXClientResult res = _fx_client.SetWatchedSymbols(_rate_tickers, symbols,this);
+            FXClientResult res = _fx_client.SetWatchedSymbols(_rate_tickers, symbols, this);
             if (res.Error)
             {
                 if (res.Disconnected)
@@ -5671,24 +7296,136 @@ namespace RightEdgeOandaPlugin
         public void SetAccountState(BrokerAccountState accountState)
         {
             _log.captureDebug("SetAccountState() called.");
-            if (string.IsNullOrEmpty(_orderbook.OrderLogFileName))
-            {//the plugin doesn't know anything about what might be in accountState
-                //if there is anything in the accontState there's no way to reconnect to the transaction at oanda
-                //so throw an error
+            
+            if (accountState.PendingOrders.Count == 0 && accountState.Positions.Count == 0)
+            {//nothing from RE so skip loading the orderbook & just start fresh
                 return;
             }
 
-            OrderBook saved_orderbook = OrderBook.loadSettings(_orderbook.OrderLogFileName);
+            if (string.IsNullOrEmpty(_opts.OrderLogFileName))
+            {//the plugin doesn't know anything about what might be in accountState
+                if (accountState.PendingOrders.Count != 0 || accountState.Positions.Count != 0)
+                {
+                    _error_str="There is no order log from the broker. Unable to reconnect position state to the transactions at oanda";
+                    _log.captureError(_error_str,"SetAccountState Error");
+                    return;
+                }
+                return;
+            }
+            FileInfo fi = new FileInfo(_opts.OrderLogFileName);
+            if (!fi.Exists || fi.Length == 0)
+            {//the plugin doesn't know anything about what might be in accountState
+                if (accountState.PendingOrders.Count != 0 || accountState.Positions.Count != 0)
+                {
+                    _error_str = "There is no order log from the broker. Unable to reconnect position state to the transactions at oanda";
+                    _log.captureError(_error_str, "SetAccountState Error");
+                    return;
+                }
+                return;
+            }
 
-            //merge the info in accountState and saved_orderbook into the active _orderbook
-            //and load the _handling_account_ids list with account id numbers of the relevant accounts
+            FunctionResult obres = _orderbook.loadSettings(_opts.OrderLogFileName);
+            if(obres.Error)
+            {
+                _error_str = obres.Message;
+                _log.captureError(_error_str, "SetAccountState Error");
+                return;
+            }
+
+            #region manual LiveOpenPosition.xml parsing - need for version < RE 2008.1.381
+            /*
+            /////////////////////////////////////////////////////////////////////////////////
+            //ok there are orders in accountState and the saved orderbook has been loaded.
+            //untill the accountState issue is resolved, manually load the LiveOpenPositions.xml
+            //and finish filling out the accountState
+            MessageBox.Show("Select the current systems LiveOpenPositions.xml file.");
+            OpenFileDialog fd = new OpenFileDialog();
+            fd.Title = "Select LiveOpenPositions.xml";
+            fd.DefaultExt = "xml";
+            fd.Filter = "Xml data files (*.xml)|*.xml";
+            fd.CheckPathExists = true;
+            fd.CheckFileExists = true;
+            fd.Multiselect = false;
+            DialogResult dres = fd.ShowDialog();
+            if (dres == DialogResult.OK)
+            {
+                _log.captureDebug("System LiveOpenPositions.xml file name : '" + fd.FileName + "'.");
+                string fname = fd.FileName;
+                fd.Dispose();
+                FunctionObjectResult<PortfolioXml> pres = PortfolioXml.newFromSettings<PortfolioXml>(fname);
+                if (pres.Error)
+                {
+                    _error_str = obres.Message;
+                    _log.captureError(_error_str, "SetAccountState Error");
+                    return;
+                }
+                PortfolioXml saved_portfolio = pres.ResultObject;
+
+                //flush out accountState using the saved_portfolio
+                bool item_found = false;
+                bool all_items_found = true;
+                foreach (BrokerOrder bo in accountState.PendingOrders)
+                {
+                    item_found = false;
+                    foreach (PositionDataXml pd in saved_portfolio.Positions)
+                    {//find bo.OrderID in saved_portfolio.Positions
+                        if (item_found) { break; }
+                        foreach (TradeOrderXml tox in pd.PendingOrders)
+                        {
+                            if (tox.OrderID == bo.OrderId)
+                            {
+                                bo.PositionID = pd.PosID;
+                                //<---- any other missing fields?? grab the data here
+
+                                item_found = true;
+                                break;
+                            }
+                        }
+                        if (!item_found)
+                        {
+                            foreach (TradeInfo ti in pd.Trades)
+                            {
+                                if (ti.OrderID == bo.OrderId)
+                                {
+                                    bo.PositionID = pd.PosID;
+                                    //<---- any other missing fields?? grab the data here
+
+                                    item_found = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!item_found) { all_items_found = false; }
+                }
+                if (!all_items_found)
+                {
+                    _error_str = "Unable to reconcile the accountState with the LiveOpenPositions.xml";
+                    _log.captureError(_error_str, "SetAccountState Error");
+                    return;
+                }
+            }
+            /////////////////////////////////////////////////////////////////////////////////
+            */
+#endregion
+
+            FunctionResult sres=_orderbook.SetAccountState(accountState);
+            if (sres.Error)
+            {
+                _error_str = sres.Message;
+                _log.captureError(_error_str, "SetAccountState Error");
+                return;
+            }
+            
+            _reconnect_account_ids = _orderbook.GetActiveAccountList();
+            return;
         }
         #endregion
 
 
 
         #region orderbok operations
-        private bool submitOrderHandleResult(BrokerOrder order,FXClientResult r,int act_id,bool added, out string orderId)
+        private bool submitOrderHandleResult(BrokerOrder order, IFXClientResponse r, string act_id, bool added, out string orderId)
         {
             if (r.Error)
             {
@@ -5702,10 +7439,10 @@ namespace RightEdgeOandaPlugin
                 }
 
                 setResponseErrorMessage(r);
-                
+
                 _log.captureError(_error_str, "SubmitOrder Error");
 
-                if (added && r.OrdersSent==0) { _response_processor.DeactivateAccountResponder(act_id); }
+                if (added && r.OrdersSent == 0) { _response_processor.DeactivateAccountResponder(int.Parse(act_id)); }
                 orderId = order.OrderId;
                 return false;
             }
@@ -5736,6 +7473,9 @@ namespace RightEdgeOandaPlugin
             }
         }
 
+
+
+
         public bool SubmitOrder(BrokerOrder order, out string orderId)
         {
             clearError();
@@ -5743,7 +7483,7 @@ namespace RightEdgeOandaPlugin
             _log.captureDebug("SubmitOrder() called.");
             _log.captureREIn(order);
 
-            if (! _fx_client.IsInit)//the fx_client is gone, there was a disconnection event...
+            if (!_fx_client.IsInit)//the fx_client is gone, there was a disconnection event...
             {//sometimes RE acts again before checking the error from the last action
                 rejectOrder(order, out orderId);
                 _error_str = "Disconnected : Broker not connected!";
@@ -5751,91 +7491,72 @@ namespace RightEdgeOandaPlugin
                 return false;//this should re-trigger the disconnect logic in RE
             }
 
-            Account acct = null;
-            FXClientResult r;
+            string act_id=null;
             FXClientTaskResult tres = null;
             try
             {
-                FXClientObjectResult<AccountResult> ares = _fx_client.ConvertStringToAccount(order.OrderSymbol.Exchange);
-                if(ares.Error)
-                {
-                    setResponseErrorMessage(ares);
-                    _log.captureError(_error_str, "SubmitOrder Error");
-                    returnOrder(ares.FXClientResponse,order, out orderId);
-                    return false;
-                }
-
-                acct = ares.ResultObject.FromOutChannel;
-
-                tres = _response_processor.ActivateAccountResponder(acct.AccountId);
-                if (tres.Error)
-                {
-                    setResponseErrorMessage(tres); 
-                    _log.captureError(_error_str, "SubmitOrder Error");
-                    returnOrder(tres.FXClientResponse,order, out orderId);
-                    return false;
-                }
-
                 TransactionType ott = order.TransactionType;
                 switch (order.OrderType)
                 {
                     case OrderType.Market:
+                        #region market order
                         if (ott == TransactionType.Sell || ott == TransactionType.Cover)
                         {
-                            r = _orderbook.SubmitCloseOrder(order, acct);
-                            return submitOrderHandleResult(order, r, acct.AccountId, tres.TaskCompleted, out orderId);
+                            tres = _orderbook.SubmitCloseOrder(order, out act_id);
+                            return submitOrderHandleResult(order, tres, act_id, tres.TaskCompleted, out orderId);
                         }
                         else if (ott == TransactionType.Buy || ott == TransactionType.Short)
                         {
-                            r = _orderbook.SubmitMarketOrder(order, acct);
-                            return submitOrderHandleResult(order, r, acct.AccountId, tres.TaskCompleted, out orderId);
+                            tres = _orderbook.SubmitMarketOrder(order, out act_id);
+                            return submitOrderHandleResult(order, tres, act_id, tres.TaskCompleted, out orderId);
                         }
                         else
                         {
                             rejectOrder(order, out orderId);
                             _error_str = "Unknown market order transaction type '" + ott + "'.";
                             _log.captureError(_error_str, "SubmitOrder Error");
-                            if (tres.TaskCompleted) { _response_processor.DeactivateAccountResponder(acct.AccountId); }
                             return false;
                         }
+                        #endregion
                     case OrderType.Limit:
+                        #region limit order
                         if (order.TransactionType == TransactionType.Sell || order.TransactionType == TransactionType.Cover)
                         {
-                            r = _orderbook.SubmitPositionTargetProfitOrder(order, acct);
-                            return submitOrderHandleResult(order, r, acct.AccountId, tres.TaskCompleted, out orderId);
+                            tres = _orderbook.SubmitPositionTargetProfitOrder(order, out act_id);
+                            return submitOrderHandleResult(order, tres, act_id, tres.TaskCompleted, out orderId);
                         }
                         else if (ott == TransactionType.Buy || ott == TransactionType.Short)
                         {
-                            r = _orderbook.SubmitLimitOrder(order, acct);
-                            return submitOrderHandleResult(order, r, acct.AccountId, tres.TaskCompleted, out orderId);
+                            tres = _orderbook.SubmitLimitOrder(order, out act_id);
+                            return submitOrderHandleResult(order, tres, act_id, tres.TaskCompleted, out orderId);
                         }
                         else
                         {
                             rejectOrder(order, out orderId);
-                            _error_str =  "Unknown limit order transaction type '" + ott + "'.";
+                            _error_str = "Unknown limit order transaction type '" + ott + "'.";
                             _log.captureError(_error_str, "SubmitOrder Error");
-                            if (tres.TaskCompleted) { _response_processor.DeactivateAccountResponder(acct.AccountId); }
                             return false;
                         }
+                        #endregion
                     case OrderType.Stop:
+                        #region stop order
                         if (order.TransactionType == TransactionType.Sell || order.TransactionType == TransactionType.Cover)
                         {
-                            r = _orderbook.SubmitPositionStopLossOrder(order, acct);
-                            return submitOrderHandleResult(order, r, acct.AccountId, tres.TaskCompleted, out orderId);
+                            tres = _orderbook.SubmitPositionStopLossOrder(order,out act_id);
+                            return submitOrderHandleResult(order, tres, act_id, tres.TaskCompleted, out orderId);
                         }
                         else
                         {
                             rejectOrder(order, out orderId);
                             _error_str = "Unknown stop order transaction type '" + ott + "'.";
                             _log.captureError(_error_str, "SubmitOrder Error");
-                            if (tres.TaskCompleted) { _response_processor.DeactivateAccountResponder(acct.AccountId); }
                             return false;
                         }
+                        #endregion
                     default:
                         rejectOrder(order, out orderId);
-                        _error_str ="Unknown order type '" + order.OrderType + "'.";
+                        _error_str = "Unknown order type '" + order.OrderType + "'.";
                         _log.captureError(_error_str, "SubmitOrder Error");
-                        if (tres.TaskCompleted) { _response_processor.DeactivateAccountResponder(acct.AccountId); }
                         return false;
                 }//end of switch()
             }//end of try{}
@@ -5843,9 +7564,9 @@ namespace RightEdgeOandaPlugin
             {
                 rejectOrder(order, out orderId);
                 _log.captureException(e);
-                _error_str ="Unhandled exception : " + e.Message;
+                _error_str = "Unhandled exception : " + e.Message;
                 _log.captureError(_error_str, "SubmitOrder Error");
-                if (tres != null && tres.TaskCompleted && acct != null) { _response_processor.DeactivateAccountResponder(acct.AccountId); }
+                if (tres != null && tres.TaskCompleted && act_id != null) { _response_processor.DeactivateAccountResponder(int.Parse(act_id)); }
                 return false;
             }
         }
@@ -5863,7 +7584,7 @@ namespace RightEdgeOandaPlugin
                 _log.captureError(_error_str, "CancelAllOrders Error");
                 return false;//this should re-trigger the disconnect logic in RE
             }
-            
+
             try
             {
                 FXClientResult res = _orderbook.CancelAllOrders();
@@ -5916,7 +7637,7 @@ namespace RightEdgeOandaPlugin
             if (res.Error)
             {
                 setResponseErrorMessage(res);
-                _log.captureError(_error_str,"CancelOrder Error");
+                _log.captureError(_error_str, "CancelOrder Error");
                 return false;
             }
             return true;
@@ -5940,7 +7661,7 @@ namespace RightEdgeOandaPlugin
 
             try
             {
-                FXClientObjectResult<double> res = _orderbook.GetMarginAvailable();
+                FXClientObjectResult<double> res = _orderbook.GetBuyingPower();
                 if (res.Error)
                 {
                     setResponseErrorMessage(res);
@@ -5963,7 +7684,7 @@ namespace RightEdgeOandaPlugin
         {
             clearError();
             _log.captureDebug("GetMargin() called.");
-            
+
             if (!_fx_client.IsInit)//the fx_client is gone, there was a disconnection event...
             {//sometimes RE acts again before checking the error from the last action
                 _error_str = "Disconnected : Broker not connected!";
@@ -6011,7 +7732,7 @@ namespace RightEdgeOandaPlugin
                 _log.captureDebug("GetOpenOrder(id='" + id + "') called.");
 
                 BrokerOrder bo = _orderbook.GetOpenBrokerOrder(id);
-                if(bo==null)
+                if (bo == null)
                 {
                     _error_str = "Unable to locate an open order record for id : '" + id + "'.";
                     return null;
@@ -6026,7 +7747,7 @@ namespace RightEdgeOandaPlugin
                 return null;
             }
         }
-        
+
         // returns a copy of the currently open orders.
         public List<BrokerOrder> GetOpenOrders()
         {
@@ -6034,14 +7755,14 @@ namespace RightEdgeOandaPlugin
             {
                 clearError();
                 _log.captureDebug("GetOpenOrders() called.");
-                
+
                 return _orderbook.GetOpenBrokerOrderList();
             }
             catch (Exception e)
             {
                 _log.captureException(e);
                 _error_str = "Unhandled exception : " + e.Message;
-                _log.captureError(_error_str,  "GetOpenOrders Error");
+                _log.captureError(_error_str, "GetOpenOrders Error");
                 return null;
             }
         }
@@ -6053,7 +7774,14 @@ namespace RightEdgeOandaPlugin
                 clearError();
                 _log.captureDebug("GetShares(symbol='" + symbol.Name + "') called.");
 
-                return _orderbook.GetSymbolShares(symbol.Name);
+                FunctionObjectResult<int> sres = _orderbook.GetSymbolShares(symbol.Name);
+                if (sres.Error)
+                {
+                    _error_str = sres.Message;
+                    _log.captureError(_error_str, "GetShares Error");
+                    return 0;
+                }
+                return sres.ResultObject;
             }
             catch (Exception e)
             {
