@@ -42,6 +42,11 @@ namespace RightEdgeOandaPlugin
             }
 
             FunctionObjectResult<TradeEntities> eres = TradeEntities.newFromSettings<TradeEntities>(_opts.TradeEntityFileName);
+            if (eres.ResultObject == null)
+            {//if the file was empty, the results will be empty as well....
+                eres.ResultObject = new TradeEntities();//create some generic defaults...
+            }
+
             TradeEntitiesForm tef = new TradeEntitiesForm(eres.ResultObject);
 
             DialogResult dres = tef.ShowDialog();
