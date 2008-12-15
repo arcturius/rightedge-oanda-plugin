@@ -34,7 +34,6 @@
     <Reference Include="Common, Version=2008.1.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\Common.dll</HintPath>
-      <Private>True</Private>
     </Reference>
     <Reference Include="fxClientAPI_2005, Version=0.0.0.0, Culture=neutral, processorArchitecture=x86">
       <SpecificVersion>False</SpecificVersion>

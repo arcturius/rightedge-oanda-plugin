@@ -448,19 +448,6 @@ namespace RightEdgeOandaPlugin
     public enum CustomBarFrequency { Tick, OneMinute, FiveMinute, TenMinute, FifteenMinute, ThirtyMinute, SixtyMinute, ThreeHour, FourHour, Daily, Weekly, Monthly, Yearly }
     public static class OandAUtils
     {
-        public static string PluginVersion()
-        {
-            System.Reflection.Assembly[] libs = AppDomain.CurrentDomain.GetAssemblies();
-            foreach (System.Reflection.Assembly a in libs)
-            {
-                System.Reflection.AssemblyName n= a.GetName();
-                if (n.Name == "RightEdgeOandaPlugin")
-                {
-                    return n.Version.ToString();
-                }
-            }
-            return "";
-        }
         public static CustomBarFrequency convertToCustomBarFrequency(int f)
         {
             switch (f)
@@ -1203,9 +1190,18 @@ namespace RightEdgeOandaPlugin
     [Serializable]
     public class OAPluginOptions
     {
-        public OAPluginOptions() { }
-        public OAPluginOptions(OAPluginOptions src) { Copy(src); }
+        public OAPluginOptions() { setVersion(); }
+        public OAPluginOptions(OAPluginOptions src) { setVersion(); Copy(src); }
 
+        private void setVersion()
+        {
+            System.Reflection.Assembly a=System.Reflection.Assembly.GetAssembly(typeof(OAPluginOptions));
+            if (a == null) { _version = "error"; return; }
+            System.Reflection.AssemblyName an = a.GetName();
+            if (an == null || an.Version==null) { _version = "error"; return; }
+            
+            _version = an.Version.ToString();
+        }
         public void Copy(OAPluginOptions src)
         {
             OAPluginOptions rsrc = src;
@@ -1415,6 +1411,11 @@ namespace RightEdgeOandaPlugin
             return (opts);
         }
         #endregion
+
+        private string _version;
+        [XmlIgnore(),ReadOnly(true),Description("The Oanda plugin version."), Category("Version")]
+        public string Version { set { _version = value; } get { return (_version); } }
+
 
         #region trade entity options
         #region default value members
@@ -1641,17 +1642,14 @@ namespace RightEdgeOandaPlugin
         public FXClientResult Connect(ServiceConnectOptions connectOptions, string u, string pw)
         {
             if (!_is_restart)
-            {
-                _log.captureDebug("--------------- { RightEdge Oanda Plugin Version ("+ OandAUtils.PluginVersion() +") } ---------------");
-                _is_restart = true;
-            }
-            
+            { _log.captureDebug("--------------- { RightEdge Oanda Plugin Version (" + _opts.Version + ") } ---------------"); }
             _log.captureDebug("Connect() called.");
 
             _user = u;
             _pw = pw;
 
             FXClientResult res = connectIn(connectOptions,_is_restart);
+            _is_restart = true;
             if (res.Error) { return res; }
 
             if (connectOptions == ServiceConnectOptions.Broker)
@@ -1911,8 +1909,10 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
+        
         private void startDataWatchdog()
         {
+            _log.captureDebug("Starting up the Data Watchdog Thread...");
             _watchdog_thread = new Thread(new ThreadStart(watchdogMain));
             _watchdog_thread.Name = "LiveDataWatchdog";
             _watchdog_thread.Start();
@@ -1946,7 +1946,7 @@ namespace RightEdgeOandaPlugin
                     if (!is_logged_in)
                     {
                         _watchdog_restart_attempt_count++;
-                        _log.captureError("Watchdog found data stream was not logged in. Attempting to restart ('" + _watchdog_restart_attempt_count + "')...", "watchdogMain Error");
+                        _log.captureError("Watchdog found data stream was not logged in. Attempting restart number '" + _watchdog_restart_attempt_count + "'...", "watchdogMain Error");
 
                         if (_watchdog_restart_attempt_count > _watchdog_restart_attempt_threshold)
                         {
@@ -1973,6 +1973,7 @@ namespace RightEdgeOandaPlugin
                         if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
 
                         //reload watched symbols...
+
                         if (!_parent.SetWatchedSymbols(syms))
                         {//_parent will log errors...
                             if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
@@ -2576,8 +2577,8 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _broker_log.captureOAOut(acct, mo, "MODIFY");
                 acct.Modify(mo);
+                _broker_log.captureOAOut(acct, mo, "MODIFY");
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
@@ -2617,8 +2618,8 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _broker_log.captureOAOut(acct, lo, "MODIFY");
                 acct.Modify(lo);
+                _broker_log.captureOAOut(acct, lo, "MODIFY");
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
@@ -2658,8 +2659,8 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _broker_log.captureOAOut(acct, mo, "EXECUTE");
                 acct.Execute(mo);
+                _broker_log.captureOAOut(acct, mo, "EXECUTE");
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
@@ -2698,8 +2699,8 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _broker_log.captureOAOut(acct, lo, "EXECUTE");
                 acct.Execute(lo);
+                _broker_log.captureOAOut(acct, lo, "EXECUTE");
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
@@ -2738,8 +2739,8 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _broker_log.captureOAOut(acct, mo, "CLOSE");
                 acct.Close(mo);
+                _broker_log.captureOAOut(acct, mo, "CLOSE");
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
@@ -2779,8 +2780,8 @@ namespace RightEdgeOandaPlugin
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
                 }
-                _broker_log.captureOAOut(acct, lo, "CLOSE");
                 acct.Close(lo);
+                _broker_log.captureOAOut(acct, lo, "CLOSE");
                 res.FXClientResponse = FXClientResponseType.Accepted;
                 return res;
             }
@@ -4091,6 +4092,38 @@ namespace RightEdgeOandaPlugin
         private RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> _accounts = new RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords>();
         public RightEdgeOandaPlugin.SerializableDictionary<int, BrokerSymbolRecords> Accounts { set { _accounts = value; } get { return (_accounts); } }
 
+        public void LogData(PluginLog log)
+        {
+            log.captureDebug("<--- Begin Order Book Data Dump");
+
+            log.captureDebug("Book contains '" + _accounts.Count + "' accounts");
+            foreach (int act_id in _accounts.Keys)
+            {
+                BrokerSymbolRecords bsr= _accounts[act_id];
+                log.captureDebug(" Account '" + act_id + "' contains '" + bsr.Count + "' symbols");
+
+                foreach (string sym in bsr.Keys)
+                {
+                    BrokerPositionRecords bprl = bsr[sym];
+                    log.captureDebug("  Account '" + act_id + "'/Symbol '" + sym + "' contains '" + bprl.Positions.Count + "' positions");
+
+                    foreach (string posid in bprl.Positions.Keys)
+                    {
+                        BrokerPositionRecord bpr = bprl.Positions[posid];
+                        log.captureDebug("   Position '" + posid + "'/Account '" + act_id + "'/Symbol '" + sym + "' contains '" + bpr.TradeRecords.Count + "' trade records");
+
+                        foreach (IDString trid in bpr.TradeRecords.Keys)
+                        {
+                            TradeRecord tr = bpr.TradeRecords[trid];
+                            log.captureDebug("    Trade Record id='" + tr.OrderID.ID + "' order type='" + tr.openOrder.OrderType + "' trans type='" + tr.openOrder.TransactionType + "' state='" + tr.openOrder.BrokerOrderState + "'");
+                        }
+                    }
+                }
+            }
+
+            log.captureDebug("<--- End Order Book Data Dump");
+        }
+
         public void ClearREOwned()
         {
             foreach(int a in _accounts.Keys)
@@ -4617,14 +4650,20 @@ namespace RightEdgeOandaPlugin
             }
             //else - the default limit order duration is 1 hour
 
+            Thread.BeginCriticalRegion();//FIX ME - the thread is losing control when calling the fxclient wrapper
+            //FIX ME - this results in another thread grbbing the order book and looking for an order which isn't there yet....
+            //FIX ME - will this critical region stop that from happening??
+
             FXClientResult sres = _parent.fxClient.SendOAExecute(acct, lo);
-            if (sres.Error) { res.setError(sres.Message,sres.FXClientResponse,sres.Disconnected);  return res; }
+            if (sres.Error) { res.setError(sres.Message, sres.FXClientResponse, sres.Disconnected); Thread.EndCriticalRegion(); return res; }
 
             order.OrderState = BrokerOrderState.Submitted;
             order.OrderId = lo.Id.ToString();
 
             FunctionResult fres = pushTradeRecord(acct.AccountId, order, true);
             if (fres.Error) { res.setError(fres.Message); }
+
+            Thread.EndCriticalRegion();
             return res;
         }
         public FXClientTaskResult SubmitMarketOrder(BrokerOrder order, out string act_id)
@@ -5768,6 +5807,7 @@ namespace RightEdgeOandaPlugin
 
                     _log.captureDebug("  TRANSACTION ISSUE : '" + fetch_bpr.Message + "'");
                     _parent.RESendNoMatch(response);
+                    _accounts.LogData(_log);
                     return result;
                 }
 
@@ -6556,6 +6596,9 @@ namespace RightEdgeOandaPlugin
         {
             FunctionResult res = new FunctionResult();
 
+            _log.captureDebug("ClearAllFinalizedPositions() - Pre-Run Order Book Data");
+            _accounts.LogData(_log);
+
             List<int> act_keys = new List<int>(_accounts.Accounts.Keys);
             foreach (int act_id in act_keys)
             {
@@ -6581,17 +6624,27 @@ namespace RightEdgeOandaPlugin
                                 if (tr.closeOrder != null)
                                 {
                                     safe_to_remove = false;
-                                    continue;
+                                    break;
                                 }
-                                if (tr.openOrder != null && !tr.openOrder.StopHit && !tr.openOrder.TargetHit)
+                                if (tr.openOrder != null)
                                 {
-                                    safe_to_remove = false;
-                                    continue;
+                                    if (tr.openOrder.OrderType == OrderType.Limit &&
+                                         tr.openOrder.BrokerOrderState == BrokerOrderState.Cancelled &&
+                                        (tr.openOrder.TransactionType == TransactionType.Buy || tr.openOrder.TransactionType == TransactionType.Short)
+                                        )
+                                    {//if the open order is a fully cancelled limit buy/short go ahead and clear it
+                                        continue;
+                                    }
+                                    else if (!tr.openOrder.StopHit && !tr.openOrder.TargetHit)
+                                    {//the open order is not cancelled, nor is the stop/target hit
+                                        safe_to_remove = false;//do not remove it...
+                                        break;
+                                    }
                                 }
                             }
                             if (safe_to_remove)
                             {
-                                //pull out bpr, remove any now empty orderbook pages too
+                                _log.captureDebug("Finalizer Removing Position : pid='" + pos_id + "' sym='" + sym_id + "' act='" + act_id + "'");
                                 if (!bprl.Positions.Remove(pos_id))
                                 {
                                     res.setError("Unable to remove position record '" + pos_id + "'");
@@ -6599,6 +6652,7 @@ namespace RightEdgeOandaPlugin
                                 }
                                 if (bprl.Positions.Count == 0)
                                 {
+                                    _log.captureDebug("Finalizer Removing Symbol Page :  sym='" + sym_id + "' act='" + act_id + "'");
                                     if (!bsrl.Remove(sym_id))
                                     {
                                         res.setError("Unable to remove symbol record '" + sym_id + "'");
@@ -6607,6 +6661,7 @@ namespace RightEdgeOandaPlugin
                                 }
                                 if (bsrl.Count == 0)
                                 {
+                                    _log.captureDebug("Finalizer Removing Account Page : act='" + act_id + "'");
                                     if (!_accounts.Accounts.Remove(act_id))
                                     {
                                         res.setError("Unable to remove account record '" + act_id + "'");
@@ -6618,6 +6673,10 @@ namespace RightEdgeOandaPlugin
                     }
                 }
             }
+            
+            _log.captureDebug("ClearAllFinalizedPositions() - Post-Run Order Book Data");
+            _accounts.LogData(_log);
+
             return res;
         }
         #endregion
