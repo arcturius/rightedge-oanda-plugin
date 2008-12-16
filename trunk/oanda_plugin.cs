@@ -1566,7 +1566,7 @@ namespace RightEdgeOandaPlugin
 
         public int TickCount = 0;
         public double High = 0.0;
-        public double Low = 999999.99;
+        public double Low = double.MaxValue;
 
         public override void handle(fxEventInfo ei, fxEventManager em)
         {
@@ -4341,31 +4341,6 @@ namespace RightEdgeOandaPlugin
             return;
         }
 
-        public void LogOrderBook(string s)
-        {
-            /*
-            log.captureDebug(s);
-            log.captureDebug("  orderbook has " + _accounts.Count + " accounts");
-            foreach (int act_id in _accounts.Keys)
-            {
-                BrokerSymbolRecords bsr = _accounts[act_id];
-                log.captureDebug("  account '" + act_id + "' has " + bsr.Count + " symbol positions");
-
-                foreach (string pos_key in bsr.Keys)
-                {
-                    BrokerPositionRecords tbprl = bsr[pos_key];
-                    log.captureDebug("    position list[" + pos_key + "] has " + tbprl.RecordCount + " positions");
-                    foreach (string bprl_key in tbprl.Keys)
-                    {
-                        BrokerPositionRecord tbpr = tbprl[bprl_key];
-                        log.captureDebug("      position record[" + bprl_key + "] has " + tbpr.RecordCount + " trades");
-                    }
-                }
-            }
-             * */
-            return;
-        }
-
         #region transaction / position lookup
         private TransactionFetchResult fetchBrokerPositionRecordByTransResponse(ResponseRecord response)
         {
@@ -4579,11 +4554,12 @@ namespace RightEdgeOandaPlugin
         {
             FXClientTaskObjectResult<AccountResult> res = new FXClientTaskObjectResult<AccountResult>();
             string act_id = _trade_entities.GetAccount(entity_id);
-            if (string.IsNullOrEmpty(act_id))
-            {
-                res.setError("unable to get an account identifier for entity '" + entity_id + "'", FXClientResponseType.Invalid, false);
-                return res;
-            }
+            
+            //if (string.IsNullOrEmpty(act_id))
+            //{
+            //    res.setError("unable to get an account identifier for entity '" + entity_id + "'", FXClientResponseType.Invalid, false);
+            //    return res;
+            //}
 
             FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(act_id);
             if (ares.Error)
@@ -6728,6 +6704,12 @@ namespace RightEdgeOandaPlugin
             { l.Add(a); }
             return l;
         }
+
+        public void LogOrderBook(string p)
+        {
+            _log.captureDebug("OrderBookData Dump : " + p);
+            _accounts.LogData(_log);
+        }
     }
 
     public class OandAPlugin : IService, IBarDataRetrieval, ITickRetrieval, IBroker
@@ -7060,7 +7042,7 @@ namespace RightEdgeOandaPlugin
                     _response_processor = null;
                 }
 
-                _orderbook.LogOrderBook("disconnecting");
+                _orderbook.LogOrderBook("Disconnecting");
 
                 if (!string.IsNullOrEmpty(_opts.OrderLogFileName))
                 {
