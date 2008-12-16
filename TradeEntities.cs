@@ -234,6 +234,7 @@ namespace RightEdgeOandaPlugin
         public FunctionResult refresh<T>() where T : IXMLFileSerialize, new()
         {
             FileInfo fi = new FileInfo(_file_name);
+
             if (fi.LastWriteTime > _last_modify_ts)
             {
                 clear();//FIX ME - there should be a way to undo this if the load fails
@@ -246,6 +247,7 @@ namespace RightEdgeOandaPlugin
         public FunctionResult refresh(Type t)
         {
             FileInfo fi = new FileInfo(_file_name);
+
             if (fi.LastWriteTime > _last_modify_ts)
             {
                 clear();//FIX ME - there should be a way to undo this if the load fails
@@ -867,7 +869,7 @@ namespace RightEdgeOandaPlugin
 
         public double GetDefaultUpperBoundsPrice(double order_price)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres=refresh<TradeEntities>();
                 if (fres.Error) { return -1.0; }
@@ -885,7 +887,7 @@ namespace RightEdgeOandaPlugin
         }
         public double GetDefaultLowerBoundsPrice(double order_price)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return -1.0; }
@@ -906,7 +908,7 @@ namespace RightEdgeOandaPlugin
         #region entity element value access
         public double GetUpperBoundsPrice(string EntityID, double order_price)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return -1.0; }
@@ -921,7 +923,7 @@ namespace RightEdgeOandaPlugin
         }
         public double GetLowerBoundsPrice(string EntityID, double order_price)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return -1.0; }
@@ -936,7 +938,7 @@ namespace RightEdgeOandaPlugin
         }
         public string GetAccount(string EntityID)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return string.Empty; }
@@ -951,7 +953,7 @@ namespace RightEdgeOandaPlugin
         }
         public double GetBaseSpread(string EntityID)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return -1.0; }
@@ -967,7 +969,7 @@ namespace RightEdgeOandaPlugin
 
         public double GetOrderSize(string EntityID)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return -1.0; }
@@ -982,7 +984,7 @@ namespace RightEdgeOandaPlugin
         }
         public ValueScaleType GetOrderSizeType(string EntityID)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult fres = refresh<TradeEntities>();
                 if (fres.Error) { return ValueScaleType.Unset; }
@@ -1000,7 +1002,7 @@ namespace RightEdgeOandaPlugin
         {
             FunctionObjectResult<AccountValue> fres = new FunctionObjectResult<AccountValue>();
 
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult res = refresh<TradeEntities>();
                 if (res.Error) { fres.setError(res.Message);  return fres; }
@@ -1053,7 +1055,7 @@ namespace RightEdgeOandaPlugin
 
         public int GetOrderSizeValue(string EntityID, AccountValue av, double base_pr)
         {
-            if (_refresh_on_lookup)
+            if (_refresh_on_lookup && !string.IsNullOrEmpty(FileName))
             {
                 FunctionResult res = refresh<TradeEntities>();
                 if (res.Error) { return -1; }
