@@ -1584,7 +1584,11 @@ namespace RightEdgeOandaPlugin
 
     public class AccountResponder : fxAccountEvent
     {
-        public AccountResponder(int act_id, string base_currency, OandAPlugin p) : base() { _account_id = act_id; _base_currency = base_currency; _parent = p; }
+        public AccountResponder(int act_id, string base_currency, OandAPlugin p) : base() { _account_id = act_id; _base_currency = base_currency; _parent = p; if (_use_temp_log) { _temp_log = new PluginLog(); _temp_log.FileName = _log_file; } }
+
+        private bool _use_temp_log = false;
+        private string _log_file = "C:\\Storage\\src\\RE-LogFiles\\account_responder.log";
+        private PluginLog _temp_log = null;
 
         private OandAPlugin _parent = null;
 
@@ -1596,10 +1600,30 @@ namespace RightEdgeOandaPlugin
 
         private string _base_currency = string.Empty;
         public string BaseCurrency { get { return (_base_currency); } }
+        public override void exception_call_back()
+        {
+            if (_parent.BrokerLog != null)
+            { _parent.BrokerLog.captureDebug("AccountResponder detected an exception_call_back()"); }
+            base.exception_call_back();
+        }
+        public override bool match(fxEventInfo ei)
+        {
+            //if (ei is fxAccountEventInfo)
+            //{ _parent.ResponseProcessor.HandleAccountResponder(this, (fxAccountEventInfo)ei, null); }
+            return base.match(ei);
+        }
 
         public override void handle(fxEventInfo ei, fxEventManager em)
         {
-            _parent.ResponseProcessor.HandleAccountResponder(this, (fxAccountEventInfo)ei, em);
+            if (_use_temp_log) { _temp_log.captureDebug("AccountResponder.handle() start..."); }
+            if (ei is fxAccountEventInfo)
+            {
+                fxAccountEventInfo fxei = (fxAccountEventInfo)ei;
+                if (_use_temp_log) { _temp_log.captureDebug("  calling responder for account event : desc='" + fxei.Transaction.Description + "' id='" + fxei.Transaction.TransactionNumber + "' link='" + fxei.Transaction.Link + "'"); }
+                _parent.ResponseProcessor.HandleAccountResponder(this, fxei, em);
+            }
+            base.handle(ei, em);
+            if (_use_temp_log) { _temp_log.captureDebug("AccountResponder.handle() stop..."); }
         }
     }
     #endregion
@@ -1694,18 +1718,21 @@ namespace RightEdgeOandaPlugin
             }
         }
 
-
+        private Thread _watchdog_thread = null;
         private int _watchdog_restart_attempt_count = 0;
-        private int _watchdog_restart_attempt_threshold = 3;
-
         private int _watchdog_restart_complete_count = 0;
+        
+        ////////////////////////////////////////////////////////////////////////////////
+        //FIX ME - it would be nice to make these plugin options...
+        private int _watchdog_restart_attempt_threshold = 3;
         private int _watchdog_restart_complete_threshold = 15;
 
         private int _watchdog_restart_delay = 10;
         private int _watchdog_min_time_to_sleep = 10;
         private int _watchdog_max_time_to_sleep = 120;
+        ////////////////////////////////////////////////////////////////////////////////
 
-        private Thread _watchdog_thread = null;
+        
 
 
         private FXClientResult connectIn(ServiceConnectOptions connectOptions,bool is_restart)
@@ -1961,6 +1988,10 @@ namespace RightEdgeOandaPlugin
                         {
                             syms.Add(rt.Symbol);
                         }
+
+                        //cleanup the now disconnected _in channel client...
+                        _fx_client_in.Destroy();
+                        _fx_client_in = null;
 
                         FXClientResult fxres = connectIn(ServiceConnectOptions.LiveData, true);
                         if (fxres.Error)
@@ -2576,6 +2607,7 @@ namespace RightEdgeOandaPlugin
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
+                    //FIX ME - acct will be invalid at this point...need to refetch it...
                 }
                 acct.Modify(mo);
                 _broker_log.captureOAOut(acct, mo, "MODIFY");
@@ -2617,6 +2649,7 @@ namespace RightEdgeOandaPlugin
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
+                    //FIX ME - acct will be invalid at this point...need to refetch it...
                 }
                 acct.Modify(lo);
                 _broker_log.captureOAOut(acct, lo, "MODIFY");
@@ -2658,6 +2691,7 @@ namespace RightEdgeOandaPlugin
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
+                    //FIX ME - acct will be invalid at this point...need to refetch it...
                 }
                 acct.Execute(mo);
                 _broker_log.captureOAOut(acct, mo, "EXECUTE");
@@ -2698,6 +2732,7 @@ namespace RightEdgeOandaPlugin
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
+                    //FIX ME - acct will be invalid at this point...need to refetch it...
                 }
                 acct.Execute(lo);
                 _broker_log.captureOAOut(acct, lo, "EXECUTE");
@@ -2738,6 +2773,7 @@ namespace RightEdgeOandaPlugin
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
+                    //FIX ME - acct will be invalid at this point...need to refetch it...
                 }
                 acct.Close(mo);
                 _broker_log.captureOAOut(acct, mo, "CLOSE");
@@ -2779,6 +2815,7 @@ namespace RightEdgeOandaPlugin
                 {
                     FXClientResult cres = connectOut();
                     if (cres.Error) { return cres; }
+                    //FIX ME - acct will be invalid at this point...need to refetch it...
                 }
                 acct.Close(lo);
                 _broker_log.captureOAOut(acct, lo, "CLOSE");
@@ -3207,18 +3244,24 @@ namespace RightEdgeOandaPlugin
             }
         }
 
+        private List<ResponseRecord> _receive_queue = new List<ResponseRecord>();
         public void HandleAccountResponder(AccountResponder ar, fxAccountEventInfo aei, fxEventManager em)
         {
             _log.captureDebug("handleAccountResponder() called.");
-            Transaction trans = aei.Transaction;
+            Transaction trans = (Transaction)aei.Transaction.Clone();
+
             _log.captureOAIn(trans, ar.AccountID);
 
             ResponseRecord resp = new ResponseRecord(trans, ar.AccountID, ar.BaseCurrency);
+            _receive_queue.Add(resp);
 
-            Monitor.Enter(_response_pending_list);
+            if (!Monitor.TryEnter(_response_pending_list))
+            { return; }
+
             try
             {
-                _response_pending_list.Add(resp);
+                foreach (ResponseRecord rr in _receive_queue)
+                { _response_pending_list.Add(rr); }
             }
             finally { Monitor.Pulse(_response_pending_list); Monitor.Exit(_response_pending_list); }
 
@@ -3226,6 +3269,8 @@ namespace RightEdgeOandaPlugin
             {
                 _response_processor.Interrupt();
             }
+
+            _receive_queue.Clear();
         }
 
         public FXClientTaskResult ActivateAccountResponder(Account acct)
@@ -4120,7 +4165,6 @@ namespace RightEdgeOandaPlugin
                     }
                 }
             }
-
             log.captureDebug("<--- End Order Book Data Dump");
         }
 
@@ -5606,6 +5650,7 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
+
         public FXClientResult CancelSpecificOrder(IDString oid)
         {
             FXClientResult res = new FXClientResult();
@@ -5650,21 +5695,23 @@ namespace RightEdgeOandaPlugin
             #endregion
 
             #region oanda close order
-            FXClientTaskObjectResult<AccountResult> ares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, bro));
+            FXClientTaskObjectResult<AccountResult> ares;
+            FXClientObjectResult<LimitOrder> lores;
+
+            ares = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, bro));
             if (ares.Error)
             {
                 res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
                 return res;
             }
 
-            FXClientObjectResult<LimitOrder> lores = _parent.fxClient.GetOrderWithID(ares.ResultObject.FromOutChannel, oid.Num);
+            lores = _parent.fxClient.GetOrderWithID(ares.ResultObject.FromOutChannel, oid.Num);
             if (lores.Error)
             {
                 res.setError("Unable to locate the corresponding oanda broker order for id '" + oid.ID + "'.", lores.FXClientResponse, lores.Disconnected);
                 if (ares.TaskCompleted) { _parent.ResponseProcessor.DeactivateAccountResponder(ares.ResultObject.FromOutChannel.AccountId); }
                 return res;
             }
-
             return _parent.fxClient.SendOAClose(ares.ResultObject.FromOutChannel, lores.ResultObject);
             #endregion
         }
@@ -6086,10 +6133,10 @@ namespace RightEdgeOandaPlugin
                     else if (desc == "Modify Trade")
                     {//modify response...
                         #region modify trade
-                        _log.captureDebug("  handleAccountTransaction() - preparing to modify a trade...");
-
                         double sl = trans.Stop_loss;
                         double tp = trans.Take_profit;
+
+                        _log.captureDebug("  handleAccountTransaction() - preparing to modify a trade (trans num='" + trans.TransactionNumber + "'/link='" + trans.Link + "' tp='" + tp + "'/sl='" + sl + "')...");
 
                         if (tr.openOrder == null)
                         {
@@ -6572,8 +6619,8 @@ namespace RightEdgeOandaPlugin
         {
             FunctionResult res = new FunctionResult();
 
-            _log.captureDebug("ClearAllFinalizedPositions() - Pre-Run Order Book Data");
-            _accounts.LogData(_log);
+            //_log.captureDebug("ClearAllFinalizedPositions() - Pre-Run Order Book Data");
+            //_accounts.LogData(_log);
 
             List<int> act_keys = new List<int>(_accounts.Accounts.Keys);
             foreach (int act_id in act_keys)
@@ -6650,8 +6697,8 @@ namespace RightEdgeOandaPlugin
                 }
             }
             
-            _log.captureDebug("ClearAllFinalizedPositions() - Post-Run Order Book Data");
-            _accounts.LogData(_log);
+            //_log.captureDebug("ClearAllFinalizedPositions() - Post-Run Order Book Data");
+            //_accounts.LogData(_log);
 
             return res;
         }
@@ -6718,7 +6765,7 @@ namespace RightEdgeOandaPlugin
         {
             _fx_client = new fxClientWrapper(this);
 
-            //System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.TextWriterTraceListener("c:\\Storage\\src\\trace.log"));
+            //System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.TextWriterTraceListener("c:\\Storage\\src\\RE-LogFiles\\broker_trace.log"));
             //System.Diagnostics.Trace.AutoFlush = true;
         }
         ~OandAPlugin() { }
@@ -6742,9 +6789,11 @@ namespace RightEdgeOandaPlugin
         public OrderBook OrderBook { get { return (_orderbook); } }
 
 
-        private static BrokerLog _log = new BrokerLog();
-        private static TickLog _tick_log = new TickLog();
-        private static PluginLog _history_log = new PluginLog();
+        private BrokerLog _log = new BrokerLog();
+        public BrokerLog BrokerLog { get { return _log; } }
+
+        private TickLog _tick_log = new TickLog();
+        private PluginLog _history_log = new PluginLog();
 
         private void disconnectCleanup()
         {
@@ -7660,28 +7709,38 @@ namespace RightEdgeOandaPlugin
                 return false;//this should re-trigger the disconnect logic in RE
             }
 
-            IDString oid = new IDString(orderId);
-            int id_num = oid.Num;
+            try
+            {
+                IDString oid = new IDString(orderId);
+                int id_num = oid.Num;
 
-            bool is_pos_id = false;
-            if (oid.Type != IDType.Other) { is_pos_id = true; }
+                bool is_pos_id = false;
+                if (oid.Type != IDType.Other) { is_pos_id = true; }
 
-            FXClientResult res;
-            if (is_pos_id)
+                FXClientResult res;
+                if (is_pos_id)
+                {
+                    res = _orderbook.CancelPositionOrder(oid);
+                }
+                else
+                {
+                    res = _orderbook.CancelSpecificOrder(oid);
+                }
+                if (res.Error)
+                {
+                    setResponseErrorMessage(res);
+                    _log.captureError(_error_str, "CancelOrder Error");
+                    return false;
+                }
+                return true;
+            }//end of try{}
+            catch (Exception e)
             {
-                res = _orderbook.CancelPositionOrder(oid);
-            }
-            else
-            {
-                res = _orderbook.CancelSpecificOrder(oid);
-            }
-            if (res.Error)
-            {
-                setResponseErrorMessage(res);
+                _log.captureException(e);
+                _error_str = "Unhandled exception : " + e.Message;
                 _log.captureError(_error_str, "CancelOrder Error");
                 return false;
             }
-            return true;
         }
         #endregion
 
