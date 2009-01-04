@@ -1,0 +1,198 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="3.5" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>9.0.21022</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{85EEE2BD-3917-41D9-B00E-6F8794473CAD}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>RightEdgeOandaPlugin</RootNamespace>
+    <AssemblyName>RightEdgeOandaPlugin</AssemblyName>
+    <TargetFrameworkVersion>v2.0</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Common, Version=2008.1.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\Common.dll</HintPath>
+    </Reference>
+    <Reference Include="fxClientAPI_2005, Version=0.0.0.0, Culture=neutral, processorArchitecture=x86">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\..\..\WINDOWS\system32\fxClientAPI_2005.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Design" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="CustomComparableDictionaryControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="CustomComparableDictionaryControl.Designer.cs">
+      <DependentUpon>CustomComparableDictionaryControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="CustomComparableDictionaryForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="CustomComparableDictionaryForm.Designer.cs">
+      <DependentUpon>CustomComparableDictionaryForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="oanda_plugin.cs">
+    </Compile>
+    <Compile Include="options_form.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="options_form.Designer.cs">
+      <DependentUpon>options_form.cs</DependentUpon>
+    </Compile>
+    <Compile Include="options_control.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="options_control.Designer.cs">
+      <DependentUpon>options_control.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PluginLogOptionsControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="PluginLogOptionsControl.Designer.cs">
+      <DependentUpon>PluginLogOptionsControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="PluginLogOptionsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PluginLogOptionsForm.Designer.cs">
+      <DependentUpon>PluginLogOptionsForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="TradeEntities.cs">
+    </Compile>
+    <Compile Include="TradeEntitiesControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="TradeEntitiesControl.Designer.cs">
+      <DependentUpon>TradeEntitiesControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TradeEntitiesForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TradeEntitiesForm.Designer.cs">
+      <DependentUpon>TradeEntitiesForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TradeEntityControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="TradeEntityControl.Designer.cs">
+      <DependentUpon>TradeEntityControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TradeEntityForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TradeEntityForm.Designer.cs">
+      <DependentUpon>TradeEntityForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TradeEntityIDControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="TradeEntityIDControl.Designer.cs">
+      <DependentUpon>TradeEntityIDControl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="TradeEntityIDForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="TradeEntityIDForm.Designer.cs">
+      <DependentUpon>TradeEntityIDForm.cs</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="CustomComparableDictionaryControl.resx">
+      <DependentUpon>CustomComparableDictionaryControl.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="CustomComparableDictionaryForm.resx">
+      <DependentUpon>CustomComparableDictionaryForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="options_control.resx">
+      <DependentUpon>options_control.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="options_form.resx">
+      <DependentUpon>options_form.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="PluginLogOptionsControl.resx">
+      <DependentUpon>PluginLogOptionsControl.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="PluginLogOptionsForm.resx">
+      <DependentUpon>PluginLogOptionsForm.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TradeEntitiesControl.resx">
+      <DependentUpon>TradeEntitiesControl.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TradeEntitiesForm.resx">
+      <DependentUpon>TradeEntitiesForm.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TradeEntityControl.resx">
+      <DependentUpon>TradeEntityControl.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TradeEntityForm.resx">
+      <DependentUpon>TradeEntityForm.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="TradeEntityIDForm.resx">
+      <DependentUpon>TradeEntityIDForm.cs</DependentUpon>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\EditTradeEntitiesButton.bmp" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+  <PropertyGroup>
+    <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\"</PostBuildEvent>
+  </PropertyGroup>
+</Project>
