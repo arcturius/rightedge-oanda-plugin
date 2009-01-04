@@ -1586,7 +1586,7 @@ namespace RightEdgeOandaPlugin
     {
         public AccountResponder(int act_id, string base_currency, OandAPlugin p) : base() { _account_id = act_id; _base_currency = base_currency; _parent = p; if (_use_temp_log) { _temp_log = new PluginLog(); _temp_log.FileName = _log_file; } }
 
-        private bool _use_temp_log = false;
+        private bool _use_temp_log = true;
         private string _log_file = "C:\\Storage\\src\\RE-LogFiles\\account_responder.log";
         private PluginLog _temp_log = null;
 
