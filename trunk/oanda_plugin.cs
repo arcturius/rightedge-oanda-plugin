@@ -941,6 +941,10 @@ namespace RightEdgeOandaPlugin
                 if (_fs != null) { return; }
                 _fs = new FileStream(_fname, FileMode.Append, FileAccess.Write);
             }
+            catch (Exception e)
+            {
+                throw new OAPluginException("log open error : " + e.Message, e);
+            }
             finally { if (do_lock) { Monitor.Pulse(_lock); Monitor.Exit(_lock); } }
         }
         protected void writeMessage(string message)
@@ -961,7 +965,7 @@ namespace RightEdgeOandaPlugin
             }
             catch (Exception e)
             {
-                throw new OAPluginException("", e);
+                throw new OAPluginException("log write error : " + e.Message, e);
             }
             finally { Monitor.Pulse(_lock); Monitor.Exit(_lock); }
         }
@@ -1584,11 +1588,7 @@ namespace RightEdgeOandaPlugin
 
     public class AccountResponder : fxAccountEvent
     {
-        public AccountResponder(int act_id, string base_currency, OandAPlugin p) : base() { _account_id = act_id; _base_currency = base_currency; _parent = p; if (_use_temp_log) { _temp_log = new PluginLog(); _temp_log.FileName = _log_file; } }
-
-        private bool _use_temp_log = false;
-        private string _log_file = "C:\\Storage\\src\\RE-LogFiles\\account_responder.log";
-        private PluginLog _temp_log = null;
+        public AccountResponder(int act_id, string base_currency, OandAPlugin p) : base() { _account_id = act_id; _base_currency = base_currency; _parent = p; }
 
         private OandAPlugin _parent = null;
 
@@ -1615,15 +1615,12 @@ namespace RightEdgeOandaPlugin
 
         public override void handle(fxEventInfo ei, fxEventManager em)
         {
-            if (_use_temp_log) { _temp_log.captureDebug("AccountResponder.handle() start..."); }
             if (ei is fxAccountEventInfo)
             {
                 fxAccountEventInfo fxei = (fxAccountEventInfo)ei;
-                if (_use_temp_log) { _temp_log.captureDebug("  calling responder for account event : desc='" + fxei.Transaction.Description + "' id='" + fxei.Transaction.TransactionNumber + "' link='" + fxei.Transaction.Link + "'"); }
                 _parent.ResponseProcessor.HandleAccountResponder(this, fxei, em);
             }
             base.handle(ei, em);
-            if (_use_temp_log) { _temp_log.captureDebug("AccountResponder.handle() stop..."); }
         }
     }
     #endregion
@@ -1632,6 +1629,28 @@ namespace RightEdgeOandaPlugin
     {
         private OandAPlugin _parent;
         public fxClientWrapper(OandAPlugin p) { _parent = p; }
+        ~fxClientWrapper()
+        {
+            if (_fx_client_in != null)
+            {
+                if (_fx_client_in.IsLoggedIn)
+                {
+                    _fx_client_in.Logout();
+                }
+                _fx_client_in.Destroy();
+                _fx_client_in = null;
+            }
+            if (_fx_client_out != null)
+            {
+                if (_fx_client_out.IsLoggedIn)
+                {
+                    _fx_client_out.Logout();
+                }
+                _fx_client_out.Destroy();
+                _fx_client_out = null;
+            }
+
+        }
 
         //account listeners will connect to the _in client
         //in case the out channel disconnects due to an Oanda Exception
@@ -1689,6 +1708,16 @@ namespace RightEdgeOandaPlugin
             try
             {
                 if (_watchdog_thread != null) { stopDataWatchdog(); }
+
+                if (_fx_client_out != null)
+                {
+                    if (_fx_client_out.IsLoggedIn)
+                    {
+                        _fx_client_out.Logout();//FIX ME <--- this can hang indefinitely....
+                    }
+                    _fx_client_out.Destroy();
+                    _fx_client_out = null;
+                }
 
                 if (_fx_client_in.IsLoggedIn)
                 {
@@ -1750,19 +1779,21 @@ namespace RightEdgeOandaPlugin
 
             bool wrt = false;
             bool wka = false;
+            bool wlk = false;
             bool start_data_watchdog = false;
             switch (connectOptions)
             {
                 case ServiceConnectOptions.Broker:
-                    wka = true;
+                    wka = true;//<-- only need 1 option, keep alive OR rate thread
                     wrt = false;
                     break;
                 case ServiceConnectOptions.LiveData:
                     start_data_watchdog = !is_restart;
-                    wka = true;
-                    wrt = true;
+                    wka = false;
+                    wrt = true;//<-- only need 1 option, keep alive OR rate thread
                     break;
                 case ServiceConnectOptions.HistoricalData:
+                    wka = false;
                     wrt = true;
                     break;
                 default:
@@ -1790,6 +1821,7 @@ namespace RightEdgeOandaPlugin
 
             try
             {
+                _fx_client_in.WithLoadableKey = wlk;
                 _fx_client_in.WithRateThread = wrt;
                 _fx_client_in.WithKeepAliveThread = wka;
                 _fx_client_in.Login(_user, _pw);
@@ -1847,8 +1879,9 @@ namespace RightEdgeOandaPlugin
 
             try
             {
+                _fx_client_out.WithLoadableKey = false;
                 _fx_client_out.WithRateThread = true;//need rate table to query rates for non-local price conversions
-                _fx_client_out.WithKeepAliveThread = true;
+                _fx_client_out.WithKeepAliveThread = false;//<-- only need 1 option, keep alive OR rate thread
                 _fx_client_out.Login(_user, _pw);
                 return res;
             }
@@ -2421,7 +2454,7 @@ namespace RightEdgeOandaPlugin
             FXClientResult res = new FXClientResult();
             try
             {
-                _log.captureDebug("ERASEME LATER : Account values [currency=" + acct.HomeCurrency + " balance=" + acct.Balance.ToString() + "{margin: rate=" + acct.MarginRate.ToString() + " available=" + acct.MarginAvailable() + " used=" + acct.MarginUsed() + "}]");
+                _log.captureDebug("AddAccountEventResponder : Account values [currency=" + acct.HomeCurrency + " balance=" + acct.Balance.ToString() + "{margin: rate=" + acct.MarginRate.ToString() + " available=" + acct.MarginAvailable() + " used=" + acct.MarginUsed() + "}]");
                 
                 fxEventManager em = acct.GetEventManager();
 
@@ -3262,6 +3295,8 @@ namespace RightEdgeOandaPlugin
             {
                 foreach (ResponseRecord rr in _receive_queue)
                 { _response_pending_list.Add(rr); }
+                
+                _receive_queue.Clear();
             }
             finally { Monitor.Pulse(_response_pending_list); Monitor.Exit(_response_pending_list); }
 
@@ -3270,7 +3305,7 @@ namespace RightEdgeOandaPlugin
                 _response_processor.Interrupt();
             }
 
-            _receive_queue.Clear();
+            
         }
 
         public FXClientTaskResult ActivateAccountResponder(Account acct)
@@ -4640,7 +4675,7 @@ namespace RightEdgeOandaPlugin
                 act_id = string.Empty;
                 return res;
             }
-            Account acct = tares.ResultObject.FromInChannel;
+            Account acct = tares.ResultObject.FromOutChannel;
             act_id = acct.AccountId.ToString();
 
             fxPair oa_pair = new fxPair(order.OrderSymbol.ToString());
@@ -4699,7 +4734,7 @@ namespace RightEdgeOandaPlugin
                 act_id = string.Empty;
                 return res;
             }
-            Account acct = tares.ResultObject.FromInChannel;
+            Account acct = tares.ResultObject.FromOutChannel;
             act_id = acct.AccountId.ToString();
 
             fxPair oa_pair = new fxPair(order.OrderSymbol.ToString());
@@ -4817,7 +4852,7 @@ namespace RightEdgeOandaPlugin
                     act_id = string.Empty;
                     return res;
                 }
-                Account acct = tares.ResultObject.FromInChannel;
+                Account acct = tares.ResultObject.FromOutChannel;
                 act_id = acct.AccountId.ToString();
                 ////////////////////////////////
 
@@ -4954,7 +4989,7 @@ namespace RightEdgeOandaPlugin
                     act_id = string.Empty;
                     return res;
                 }
-                Account acct = tares.ResultObject.FromInChannel;
+                Account acct = tares.ResultObject.FromOutChannel;
                 act_id = acct.AccountId.ToString();
                 ////////////////////////////////
 
@@ -5225,7 +5260,7 @@ namespace RightEdgeOandaPlugin
                     act_id = string.Empty;
                     return res;
                 }
-                Account acct = tares.ResultObject.FromInChannel;
+                Account acct = tares.ResultObject.FromOutChannel;
                 act_id = acct.AccountId.ToString();
                 ////////////////////////////////
 
@@ -7110,6 +7145,12 @@ namespace RightEdgeOandaPlugin
                 _log.captureError(res.Message, "Disconnect Error");
                 return false;
             }
+
+            //force cleanup of the log opjects on Disconnect() since the destructor ~OandaPlugin() may not get called
+            if (_history_log != null) { _history_log.closeLog(); _history_log = null; }
+            if (_tick_log != null) { _tick_log.closeLog(); _tick_log = null; }
+            if (_log != null) { _log.closeLog(); _log = null; }
+
             return true;
         }
 
