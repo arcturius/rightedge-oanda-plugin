@@ -4682,7 +4682,7 @@ namespace RightEdgeOandaPlugin
                 act_id = string.Empty;
                 return res;
             }
-            Account acct = tares.ResultObject.FromInChannel;
+            Account acct = tares.ResultObject.FromOutChannel;
             act_id = acct.AccountId.ToString();
 
             fxPair oa_pair = new fxPair(order.OrderSymbol.ToString());
@@ -4741,7 +4741,7 @@ namespace RightEdgeOandaPlugin
                 act_id = string.Empty;
                 return res;
             }
-            Account acct = tares.ResultObject.FromInChannel;
+            Account acct = tares.ResultObject.FromOutChannel;
             act_id = acct.AccountId.ToString();
 
             fxPair oa_pair = new fxPair(order.OrderSymbol.ToString());
@@ -4859,7 +4859,7 @@ namespace RightEdgeOandaPlugin
                     act_id = string.Empty;
                     return res;
                 }
-                Account acct = tares.ResultObject.FromInChannel;
+                Account acct = tares.ResultObject.FromOutChannel;
                 act_id = acct.AccountId.ToString();
                 ////////////////////////////////
 
@@ -4996,7 +4996,7 @@ namespace RightEdgeOandaPlugin
                     act_id = string.Empty;
                     return res;
                 }
-                Account acct = tares.ResultObject.FromInChannel;
+                Account acct = tares.ResultObject.FromOutChannel;
                 act_id = acct.AccountId.ToString();
                 ////////////////////////////////
 
@@ -5267,7 +5267,7 @@ namespace RightEdgeOandaPlugin
                     act_id = string.Empty;
                     return res;
                 }
-                Account acct = tares.ResultObject.FromInChannel;
+                Account acct = tares.ResultObject.FromOutChannel;
                 act_id = acct.AccountId.ToString();
                 ////////////////////////////////
 
