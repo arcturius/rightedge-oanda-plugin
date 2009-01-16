@@ -1299,6 +1299,7 @@ namespace RightEdgeOandaPlugin
                 if (settings.ContainsKey("AccountValuesFileName")) { _account_values_fname = settings["AccountValuesFileName"]; }
                 if (settings.ContainsKey("AccountValuesEnabled")) { _use_account_values = bool.Parse(settings["AccountValuesEnabled"]); }
 
+                if (settings.ContainsKey("TradeableSymbolsFileName")) { _tradeable_symbols_fname = settings["TradeableSymbolsFileName"]; }
                 if (settings.ContainsKey("TradeEntityFileName")) { _trade_entity_fname = settings["TradeEntityFileName"]; }
                 if (settings.ContainsKey("TradeEntityName")) { _trade_entity_name = settings["TradeEntityName"]; }
                 if (settings.ContainsKey("DefaultAccount")) { _default_account = settings["DefaultAccount"]; }
@@ -1364,6 +1365,7 @@ namespace RightEdgeOandaPlugin
             settings["AccountValuesFileName"] = _account_values_fname;
             settings["AccountValuesEnabled"] = _use_account_values.ToString();
 
+            settings["TradeableSymbolsFileName"] = _tradeable_symbols_fname;
             settings["TradeEntityFileName"] = _trade_entity_fname;
             settings["TradeEntityName"] = _trade_entity_name;
 
@@ -1461,7 +1463,6 @@ namespace RightEdgeOandaPlugin
         private string _trade_entity_fname = string.Empty;
         [Description("The Trade Entities file name. If specified, this file contains the default and specific trading values that will be used."), Category("Trade Values"), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
         public string TradeEntityFileName { set { _trade_entity_fname = value; } get { return (_trade_entity_fname); } }
-
         #endregion
         
         #region account values data file options
@@ -1496,6 +1497,10 @@ namespace RightEdgeOandaPlugin
         private string _order_log_fname = "C:\\orders.xml";
         [Description("Set this to the file name for storing order information."), Editor(typeof(FilePickUITypeEditor), typeof(UITypeEditor)), Category("Broker Options")]
         public string OrderLogFileName { set { _order_log_fname = value; } get { return (_order_log_fname); } }
+
+        private string _tradeable_symbols_fname = "C:\\tradeable_symbols.xml";
+        [Description("The Tradeable Symbols file name. This file contains the symbols available at oanda for cross-price referencing."), Category("Broker Options"), Editor(typeof(NewFilePickUITypeEditor), typeof(UITypeEditor))]
+        public string TradeableSymbolsFileName { set { _tradeable_symbols_fname = value; } get { return (_tradeable_symbols_fname); } }
 
         private bool _log_trade_errors = true;
         [Description("Set this to true to enable logging of all order submission errors."), Category("Logging, Broker")]
@@ -1634,42 +1639,83 @@ namespace RightEdgeOandaPlugin
     }
     #endregion
 
+    [Serializable]
+    public class TradeableSymbols : XMLFileSerializeBase
+    {
+        public TradeableSymbols(){ }
+
+        private SerializableDictionary<string, List<string>> _tradeable_symbols = new SerializableDictionary<string, List<string>>();
+        public SerializableDictionary<string, List<string>> AvailableSymbols { set { _tradeable_symbols = value; } get { return _tradeable_symbols; } }
+       
+        public bool SymbolExists(string base_cur, string quote_cur)
+        {
+            if (!_tradeable_symbols.ContainsKey(base_cur)) { return false; }
+            return _tradeable_symbols[base_cur].Contains(quote_cur);
+        }
+
+        public override FunctionResult initFromSerialized<T>(T v)
+        {
+            if (typeof(T) == typeof(TradeableSymbols))
+            {
+                TradeableSymbols src = (TradeableSymbols)((object)v);
+                _tradeable_symbols = src._tradeable_symbols;
+            }
+            return base.initFromSerialized<T>(v);
+        }
+        public override FunctionResult initFromSerialized(Type t, object v)
+        {
+            if (typeof(TradeableSymbols) == t)
+            {
+                TradeableSymbols src = (TradeableSymbols)((object)v);
+                _tradeable_symbols = src._tradeable_symbols;
+            }
+            return base.initFromSerialized(t, v);
+        }
+    }
+
     public class fxClientWrapper
     {
         private OandAPlugin _parent;
-        public fxClientWrapper(OandAPlugin p) { _parent = p; populateTradeableSymbols(); }
+        public fxClientWrapper(OandAPlugin p) { _parent = p; _tradeable_symbols = new TradeableSymbols(); }
         ~fxClientWrapper()
         {
-            if (_fx_client_in != null)
+            lock (_in_channel_lock)
             {
-                if (_fx_client_in.IsLoggedIn)
+                if (_fx_client_in != null)
                 {
-                    _fx_client_in.Logout();
+                    if (_fx_client_in.IsLoggedIn)
+                    {
+                        _fx_client_in.Logout();
+                    }
+                    _fx_client_in.Destroy();
+                    _fx_client_in = null;
                 }
-                _fx_client_in.Destroy();
-                _fx_client_in = null;
             }
-            if (_fx_client_out != null)
+            lock (_out_channel_lock)
             {
-                if (_fx_client_out.IsLoggedIn)
+                if (_fx_client_out != null)
                 {
-                    _fx_client_out.Logout();
+                    if (_fx_client_out.IsLoggedIn)
+                    {
+                        _fx_client_out.Logout();
+                    }
+                    _fx_client_out.Destroy();
+                    _fx_client_out = null;
                 }
-                _fx_client_out.Destroy();
-                _fx_client_out = null;
             }
-
         }
 
         //account listeners will connect to the _in client
         //in case the out channel disconnects due to an Oanda Exception
         //this way no account events will be lost...
         private fxClient _fx_client_in = null;
+        private readonly object _in_channel_lock = new object();
+        public bool IsInit { get { lock (_in_channel_lock) { return (_fx_client_in != null); } } }
 
         //execution will happen over the _out channel
         private fxClient _fx_client_out = null;
-
-        public bool IsInit { get { return (_fx_client_in != null); } }
+        private readonly object _out_channel_lock = new object();
+        private bool outChannelIsInit { get { lock (_out_channel_lock) { return (_fx_client_out != null && _fx_client_out.IsLoggedIn); } } }
 
         private const int _smallest_account_num = 10000;
 
@@ -1689,6 +1735,24 @@ namespace RightEdgeOandaPlugin
         private string _pw = string.Empty;
         private bool _is_restart = false;
 
+        private Thread _watchdog_thread = null;
+        private List<Symbol> _watchdog_restart_symbols = null;
+
+        private int _watchdog_restart_attempt_count = 0;
+        private int _watchdog_restart_complete_count = 0;
+
+        ////////////////////////////////////////////////////////////////////////////////
+        //FIX ME - it would be nice to make these plugin options...
+        private int _watchdog_restart_attempt_threshold = 3;
+        private int _watchdog_restart_complete_threshold = 15;
+
+        private int _watchdog_restart_delay = 10;
+        private int _watchdog_min_time_to_sleep = 10;
+        private int _watchdog_max_time_to_sleep = 120;
+        ////////////////////////////////////////////////////////////////////////////////
+
+        private TradeableSymbols _tradeable_symbols = null;
+
         public FXClientResult Connect(ServiceConnectOptions connectOptions, string u, string pw)
         {
             if (!_is_restart)
@@ -1698,40 +1762,61 @@ namespace RightEdgeOandaPlugin
             _user = u;
             _pw = pw;
 
-            FXClientResult res = connectIn(connectOptions,_is_restart);
-            _is_restart = true;
-            if (res.Error) { return res; }
-
             if (connectOptions == ServiceConnectOptions.Broker)
-            { res = connectOut(); }
+            {
+                FunctionObjectResult<TradeableSymbols> tsres = TradeableSymbols.newFromSettings<TradeableSymbols>(_opts.TradeableSymbolsFileName);
+                if (tsres.Error)
+                {
+                    FXClientResult res = new FXClientResult();
+                    res.setError("No Tradeable Symbols : " + tsres.Message, FXClientResponseType.Invalid, true);
+                    return res;
+                }
+                _tradeable_symbols = tsres.ResultObject;
+            }
 
-            return res;
+            lock (_in_channel_lock)
+            {
+                FXClientResult res = connectIn(connectOptions, _is_restart);
+                _is_restart = true;
+                if (res.Error) { return res; }
+            }
+            
+            if (connectOptions == ServiceConnectOptions.Broker)
+            { return connectOut(); }
+            return (new FXClientResult());
         }
         public FXClientResult Disconnect()
         {
             FXClientResult res = new FXClientResult();
-            if (_fx_client_in == null) { return res; }
-
             try
             {
                 if (_watchdog_thread != null) { stopDataWatchdog(); }
 
-                if (_fx_client_out != null)
+                lock (_out_channel_lock)
                 {
-                    if (_fx_client_out.IsLoggedIn)
+                    if (_fx_client_out != null)
                     {
-                        _fx_client_out.Logout();//FIX ME <--- this can hang indefinitely....
+                        if (_fx_client_out.IsLoggedIn)
+                        {
+                            _fx_client_out.Logout();//FIX ME <--- this can hang indefinitely....
+                        }
+                        _fx_client_out.Destroy();
+                        _fx_client_out = null;
                     }
-                    _fx_client_out.Destroy();
-                    _fx_client_out = null;
                 }
 
-                if (_fx_client_in.IsLoggedIn)
+                lock (_in_channel_lock)
                 {
-                    _fx_client_in.Logout();//FIX ME <--- this can hang indefinitely....
+                    if (_fx_client_in != null)
+                    {
+                        if (_fx_client_in.IsLoggedIn)
+                        {
+                            _fx_client_in.Logout();//FIX ME <--- this can hang indefinitely....
+                        }
+                        _fx_client_in.Destroy();
+                        _fx_client_in = null;
+                    }
                 }
-                _fx_client_in.Destroy();
-                _fx_client_in = null;
                 return res;
             }
             catch (SessionException oase)
@@ -1754,23 +1839,6 @@ namespace RightEdgeOandaPlugin
             }
         }
 
-        private Thread _watchdog_thread = null;
-        private int _watchdog_restart_attempt_count = 0;
-        private int _watchdog_restart_complete_count = 0;
-        
-        ////////////////////////////////////////////////////////////////////////////////
-        //FIX ME - it would be nice to make these plugin options...
-        private int _watchdog_restart_attempt_threshold = 3;
-        private int _watchdog_restart_complete_threshold = 15;
-
-        private int _watchdog_restart_delay = 10;
-        private int _watchdog_min_time_to_sleep = 10;
-        private int _watchdog_max_time_to_sleep = 120;
-        ////////////////////////////////////////////////////////////////////////////////
-
-        
-
-
         private FXClientResult connectIn(ServiceConnectOptions connectOptions,bool is_restart)
         {
             FXClientResult res = new FXClientResult();
@@ -1778,6 +1846,7 @@ namespace RightEdgeOandaPlugin
             if (connectOptions == ServiceConnectOptions.Broker)
             { _log.captureDebug("connectIn() called."); }
 
+            // Note: callers should acquire the _in_channel_lock before calling this method
             if (_fx_client_in != null)
             {
                 res.setError("Connect called on existing fxclient", FXClientResponseType.Rejected, true);
@@ -1861,77 +1930,38 @@ namespace RightEdgeOandaPlugin
 
             _log.captureDebug("connectOut() called.");
 
-            if (_fx_client_out != null)
+            lock (_out_channel_lock)
             {
-                _fx_client_out.Destroy();
-                _fx_client_out = null;
-            }
+                if (_fx_client_out != null)
+                {
+                    _fx_client_out.Destroy();
+                    _fx_client_out = null;
+                }
 
-            if (_opts.GameServerEnabled)
-            {
-                _fx_client_out = new fxGame();
-            }
-            else
-            {
-                _fx_client_out = new fxTrade();
+                if (_opts.GameServerEnabled)
+                {
+                    _fx_client_out = new fxGame();
+                }
+                else
+                {
+                    _fx_client_out = new fxTrade();
 
-                res.setError("contact oanda when ready to turn on live", FXClientResponseType.Rejected, true);
-                return res;
-            }
+                    res.setError("contact oanda when ready to turn on live", FXClientResponseType.Rejected, true);
+                    return res;
+                }
 
-            if (_opts.LogFXClientEnabled)
-            {
-                _fx_client_out.Logfile = _opts.FXClientLogFileName;
-            }
+                if (_opts.LogFXClientEnabled)
+                {
+                    _fx_client_out.Logfile = _opts.FXClientLogFileName;
+                }
 
-            try
-            {
-                _fx_client_out.WithLoadableKey = false;
-                _fx_client_out.WithRateThread = true;//need rate table to query rates for non-local price conversions
-                _fx_client_out.WithKeepAliveThread = false;//<-- only need 1 option, keep alive OR rate thread
-                _fx_client_out.Login(_user, _pw);
-                return res;
-            }
-            catch (SessionException oase)
-            {
-                _log.captureException(oase);
-                res.setError("session exception : " + oase.Message, FXClientResponseType.Disconnected, true);
-                return res;
-            }
-            catch (OAException oae)
-            {
-                _log.captureException(oae);
-                res.setError("login failed : " + oae.Message, FXClientResponseType.Rejected, true);
-                return res;
-            }
-            catch (Exception e)
-            {
-                _log.captureException(e);
-                res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, !_fx_client_out.IsLoggedIn);
-                return res;
-            }
-        }
-
-
-        public FXClientResult SetWatchedSymbols(List<RateTicker> rate_tickers, List<Symbol> symbols, OandAPlugin parent)
-        {
-            FXClientResult res = new FXClientResult();
-            fxEventManager em;
-            try
-            {
                 try
                 {
-                    if (_fx_client_in == null || !_fx_client_in.IsLoggedIn)
-                    {
-                        res.setError("fxClient is not logged in.", FXClientResponseType.Disconnected, true);
-                        return res;
-                    }
-
-                    em = _fx_client_in.RateTable.GetEventManager();
-
-                    foreach (RateTicker oldrt in rate_tickers)
-                    { em.remove(oldrt); }
-                    rate_tickers.Clear();
+                    _fx_client_out.WithLoadableKey = false;
+                    _fx_client_out.WithRateThread = true;//need rate table to query rates for non-local price conversions
+                    _fx_client_out.WithKeepAliveThread = false;//<-- only need 1 option, keep alive OR rate thread
+                    _fx_client_out.Login(_user, _pw);
+                    return res;
                 }
                 catch (SessionException oase)
                 {
@@ -1942,17 +1972,39 @@ namespace RightEdgeOandaPlugin
                 catch (OAException oae)
                 {
                     _log.captureException(oae);
-                    res.setError("Unable to clear watched symbols : '" + oae.Message + "'", FXClientResponseType.Rejected, true);
+                    res.setError("login failed : " + oae.Message, FXClientResponseType.Rejected, true);
                     return res;
                 }
-
-                foreach (Symbol sym in symbols)
+                catch (Exception e)
                 {
-                    RateTicker rt = new RateTicker(sym, parent);
-                    rate_tickers.Add(rt);
+                    _log.captureException(e);
+                    res.setError("Unhandled exception : " + e.Message, FXClientResponseType.Rejected, !_fx_client_out.IsLoggedIn);
+                    return res;
+                }
+            }
+        }
+
+        public FXClientResult SetWatchedSymbols(List<RateTicker> rate_tickers, List<Symbol> symbols, OandAPlugin parent)
+        {
+            lock (_in_channel_lock)
+            {
+                FXClientResult res = new FXClientResult();
+                fxEventManager em;
+                try
+                {
                     try
                     {
-                        em.add(rt);
+                        if (_fx_client_in == null || !_fx_client_in.IsLoggedIn)
+                        {
+                            res.setError("fxClient is not logged in.", FXClientResponseType.Disconnected, true);
+                            return res;
+                        }
+
+                        em = _fx_client_in.RateTable.GetEventManager();
+
+                        foreach (RateTicker oldrt in rate_tickers)
+                        { em.remove(oldrt); }
+                        rate_tickers.Clear();
                     }
                     catch (SessionException oase)
                     {
@@ -1963,102 +2015,116 @@ namespace RightEdgeOandaPlugin
                     catch (OAException oae)
                     {
                         _log.captureException(oae);
-                        res.setError("Unable to set watch on symbol '" + sym.ToString() + "' : '" + oae.Message + "'", FXClientResponseType.Rejected, true);
+                        res.setError("Unable to clear watched symbols : '" + oae.Message + "'", FXClientResponseType.Rejected, true);
                         return res;
                     }
+
+                    foreach (Symbol sym in symbols)
+                    {
+                        RateTicker rt = new RateTicker(sym, parent);
+                        rate_tickers.Add(rt);
+                        try
+                        {
+                            em.add(rt);
+                        }
+                        catch (SessionException oase)
+                        {
+                            _log.captureException(oase);
+                            res.setError("session exception : " + oase.Message, FXClientResponseType.Disconnected, true);
+                            return res;
+                        }
+                        catch (OAException oae)
+                        {
+                            _log.captureException(oae);
+                            res.setError("Unable to set watch on symbol '" + sym.ToString() + "' : '" + oae.Message + "'", FXClientResponseType.Rejected, true);
+                            return res;
+                        }
+                    }
+                    return res;
                 }
-                return res;
-            }
-            catch (Exception e)
-            {
-                _log.captureException(e);
-                res.setError("Unhandled exception : " + e.Message);
-                return res;
+                catch (Exception e)
+                {
+                    _log.captureException(e);
+                    res.setError("Unhandled exception : " + e.Message);
+                    return res;
+                }
             }
         }
-        
+
+        #region watchdog functions
         private void startDataWatchdog()
         {
             _log.captureDebug("Starting up the Data Watchdog Thread...");
             _watchdog_thread = new Thread(new ThreadStart(watchdogMain));
             _watchdog_thread.Name = "LiveDataWatchdog";
+            _watchdog_thread.IsBackground = true;
             _watchdog_thread.Start();
         }
-
-        private object _lock = new object();
-        private List<Symbol> _restart_syms = null;
 
         private void watchdogMain()
         {
             bool is_logged_in = false;
-            int time_to_sleep = 0;
-            bool have_lock = false;
             try
             {
                 do
                 {
-                    time_to_sleep = _watchdog_min_time_to_sleep + (_watchdog_restart_attempt_count * _watchdog_restart_delay);
+                    int time_to_sleep = _watchdog_min_time_to_sleep + (_watchdog_restart_attempt_count * _watchdog_restart_delay);
                     if (time_to_sleep > _watchdog_max_time_to_sleep) { time_to_sleep = _watchdog_max_time_to_sleep; }
 
                     Thread.Sleep(new TimeSpan(0, 0, time_to_sleep));
 
-                    if (!Monitor.TryEnter(_lock, 2000))
+                    lock (_in_channel_lock)
                     {
-                        _log.captureError("Unable to acquire lock on fxClientWrapper lock object", "watchdogMain Error");
-                        return;
-                    }
-                    have_lock = true;
+                        is_logged_in = _fx_client_in.IsLoggedIn;
+                        if (is_logged_in)
+                        {
+                            _log.captureDebug("Watchdog determined connection is ok.");
+                            continue;
+                        }
+                        //else !is_logged_in
 
-                    is_logged_in = _fx_client_in.IsLoggedIn;
-
-                    if (!is_logged_in)
-                    {
                         _watchdog_restart_attempt_count++;
                         _log.captureError("Watchdog found data stream was not logged in. Attempting restart number '" + _watchdog_restart_attempt_count + "'...", "watchdogMain Error");
 
                         if (_watchdog_restart_attempt_count > _watchdog_restart_attempt_threshold)
                         {
                             _log.captureError("Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" + _watchdog_restart_attempt_threshold + "'.", "watchdogMain Error");
-                            if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
                             return;
                         }
 
-                        
-                        if (_restart_syms == null)
+                        if (_watchdog_restart_symbols == null)
                         {//store watched symbols...
-                            _restart_syms = new List<Symbol>();
+                            _watchdog_restart_symbols = new List<Symbol>();
                             foreach (RateTicker rt in _parent.RateTickers)
                             {
-                                _restart_syms.Add(rt.Symbol);
+                                _watchdog_restart_symbols.Add(rt.Symbol);
                             }
                             _parent.RateTickers.Clear();
                         }
 
                         //cleanup the now disconnected _in channel client...
-                        _fx_client_in.Destroy();
-                        _fx_client_in = null;
+                        if (_fx_client_in != null)
+                        {
+                            _fx_client_in.Destroy();
+                            _fx_client_in = null;
+                        }
 
                         FXClientResult fxres = connectIn(ServiceConnectOptions.LiveData, true);
                         if (fxres.Error)
                         {
                             _log.captureError("Watchdog reconnect error : " + fxres.Message, "watchdogMain Error");
-                            if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
                             return;
                         }
-
-                        if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
 
                         //reload watched symbols...
-
-                        if (!_parent.SetWatchedSymbols(_restart_syms))
+                        if (!_parent.SetWatchedSymbols(_watchdog_restart_symbols))
                         {//_parent will log errors...
-                            if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
                             return;
                         }
-                        
-                        _restart_syms.Clear();
-                        _restart_syms = null;
-                        
+
+                        _watchdog_restart_symbols.Clear();
+                        _watchdog_restart_symbols = null;
+
                         _watchdog_restart_complete_count++;
                         if (_watchdog_restart_complete_count > _watchdog_restart_complete_threshold)
                         {
@@ -2070,12 +2136,6 @@ namespace RightEdgeOandaPlugin
                         }
                         _watchdog_restart_attempt_count = 0;
                     }
-                    else
-                    {
-                        _log.captureDebug("Watchdog determined connection is ok.");
-                    }
-
-                    if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
                 } while (true);
             }
             catch (ThreadAbortException)
@@ -2085,10 +2145,6 @@ namespace RightEdgeOandaPlugin
             catch (Exception e)
             {
                 _log.captureError("Watchdog exception : " + e.Message, "watchdogMain Error");
-            }
-            finally
-            {
-                if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
             }
         }
         private FunctionResult stopDataWatchdog()
@@ -2104,43 +2160,50 @@ namespace RightEdgeOandaPlugin
             _watchdog_thread = null;
             return new FunctionResult();
         }
-        
+        #endregion
+
         public FXClientObjectResult<ArrayList> GetHistory(fxPair fxPair, Interval interval, int num_ticks,bool use_in_channel)
         {
-            FXClientObjectResult<ArrayList> res = new FXClientObjectResult<ArrayList>();
-            fxClient fx_client = use_in_channel ? _fx_client_in : _fx_client_out;
-            try
+            object lock_object = use_in_channel ? _in_channel_lock : _out_channel_lock;
+
+            lock (lock_object)
             {
-                if (!fx_client.WithRateThread)
+                FXClientObjectResult<ArrayList> res = new FXClientObjectResult<ArrayList>();
+                fxClient fx_client = use_in_channel ? _fx_client_in : _fx_client_out;
+
+                try
                 {
-                    res.setError("fx client has no rate table.", FXClientResponseType.Disconnected, false);
+                    if (!fx_client.WithRateThread)
+                    {
+                        res.setError("fx client has no rate table.", FXClientResponseType.Disconnected, false);
+                        return res;
+                    }
+                    res.ResultObject = fx_client.RateTable.GetHistory(fxPair, interval, num_ticks);
+                    if (res.ResultObject == null)
+                    {
+                        res.setError("Unable to fetch history.", FXClientResponseType.Invalid, false);
+                        return res;
+                    }
                     return res;
                 }
-                res.ResultObject = fx_client.RateTable.GetHistory(fxPair, interval, num_ticks);
-                if (res.ResultObject == null)
+                catch (SessionException oase)
                 {
-                    res.setError("Unable to fetch history.", FXClientResponseType.Invalid, false);
+                    _log.captureException(oase);
+                    res.setError(oase.Message, FXClientResponseType.Disconnected, true);
                     return res;
                 }
-                return res;
-            }
-            catch (SessionException oase)
-            {
-                _log.captureException(oase);
-                res.setError(oase.Message, FXClientResponseType.Disconnected, true);
-                return res;
-            }
-            catch (OAException oae)
-            {
-                _log.captureException(oae);
-                res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, true);
-                return res;
-            }
-            catch (Exception e)
-            {
-                _log.captureException(e);
-                res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
-                return res;
+                catch (OAException oae)
+                {
+                    _log.captureException(oae);
+                    res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, true);
+                    return res;
+                }
+                catch (Exception e)
+                {
+                    _log.captureException(e);
+                    res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
+                    return res;
+                }
             }
         }
 
@@ -2243,7 +2306,7 @@ namespace RightEdgeOandaPlugin
                 double b_pr;
                 FXClientObjectResult<double> b_res = null;
 
-                if (!found && symbolExists(trans.Quote, act_currency)) //determine Quote/act_currency cross price factor
+                if (!found && _tradeable_symbols.SymbolExists(trans.Quote, act_currency)) //determine Quote/act_currency cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, trans.Quote, act_currency);
                     if (!b_res.Error)
@@ -2265,7 +2328,7 @@ namespace RightEdgeOandaPlugin
                     }
                 }
 
-                if (!found && symbolExists(act_currency, trans.Quote)) //determine act_currency/Quote cross price factor
+                if (!found && _tradeable_symbols.SymbolExists(act_currency, trans.Quote)) //determine act_currency/Quote cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, act_currency, trans.Quote);
                     if (!b_res.Error)
@@ -2288,7 +2351,7 @@ namespace RightEdgeOandaPlugin
 
                 }
 
-                if (!found && symbolExists(trans.Base, act_currency)) //determine a Base/act_currency cross price factor
+                if (!found && _tradeable_symbols.SymbolExists(trans.Base, act_currency)) //determine a Base/act_currency cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, trans.Base, act_currency);
                     if (!b_res.Error)
@@ -2310,7 +2373,7 @@ namespace RightEdgeOandaPlugin
                     }
                 }
 
-                if (!found && symbolExists(act_currency, trans.Base)) //determine act_currency/Base cross price factor
+                if (!found && _tradeable_symbols.SymbolExists(act_currency, trans.Base)) //determine act_currency/Base cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, act_currency, trans.Base);
                     if (!b_res.Error)
@@ -2346,41 +2409,6 @@ namespace RightEdgeOandaPlugin
             return res;
         }
 
-        private SerializableDictionary<string, List<string>> _tradeable_symbols = new SerializableDictionary<string, List<string>>();
-        private void populateTradeableSymbols()
-        {//FIX ME - add all the tradeable pairs at oanda
-            string []l1;
-            List<string> l2;
-            
-            // EUR/USD, EUR/JPY, EUR/TRY, EUR/GBP
-            l1 = new[] { "USD", "JPY", "TRY", "GBP" };
-            l2 = new List<string>(l1);
-            _tradeable_symbols.Add("EUR", l2);
-
-            // USD/JPY, USD/TRY
-            l1 = new[] { "JPY", "TRY" };
-            l2 = new List<string>(l1);
-            _tradeable_symbols.Add("USD", l2);
-
-            //GBP/USD
-            l1 = new[] { "USD" };
-            l2 = new List<string>(l1);
-            _tradeable_symbols.Add("GBP", l2);
-            
-            //AUD/USD
-            l1 = new[] { "USD" };
-            l2 = new List<string>(l1);
-            _tradeable_symbols.Add("AUD", l2);
-        }
-
-        private bool symbolExists(string base_cur, string quote_cur)
-        {
-            if (!_tradeable_symbols.ContainsKey(base_cur)) { return false; }
-            return _tradeable_symbols[base_cur].Contains(quote_cur);
-        }
-
-        private bool outChannelIsInit { get { return (_fx_client_out != null && _fx_client_out.IsLoggedIn); } }
-
 
         public FXClientObjectResult<AccountResult> ConvertStringToAccount(string p)
         {
@@ -2396,15 +2424,136 @@ namespace RightEdgeOandaPlugin
                 else { act_id = r; }
             }
             else { act_i = 0; }
+            lock (_in_channel_lock)
+            {
+                try
+                {
+                    if (!_fx_client_in.IsLoggedIn)
+                    {
+                        res.setError("Broker is not connected!", FXClientResponseType.Disconnected, true);
+                        return res;
+                    }
+
+                    if (!outChannelIsInit)
+                    {
+                        FXClientResult cres = connectOut();
+                        if (cres.Error)
+                        {
+                            res.setError(cres.Message, cres.FXClientResponse, cres.Disconnected);
+                            return res;
+                        }
+                    }
+
+                    lock (_out_channel_lock)
+                    {
+                        if (act_id != -1)
+                        {
+                            ares.FromOutChannel = _fx_client_out.User.GetAccountWithId(act_id);
+                            if (ares.FromOutChannel == null)
+                            {
+                                res.setError("Unable to locate oanda account object for account id '" + act_id + "'.", FXClientResponseType.Invalid, false);
+                                return res;
+                            }
+                            res.ResultObject = ares;
+                        }
+                        else if (act_i != -1)
+                        {
+                            ArrayList arlist = _fx_client_out.User.GetAccounts();
+                            if (act_i >= arlist.Count)
+                            {
+                                res.setError("Unable to locate oanda account object for account index '" + act_i + "'.", FXClientResponseType.Invalid, false);
+                                return res;
+                            }
+                            ares.FromOutChannel = (Account)arlist[act_i];
+                            res.ResultObject = ares;
+                        }
+                        else
+                        {
+                            res.setError("Unable to parse account string '" + p + "'.", FXClientResponseType.Rejected, false);
+                            return res;
+                        }
+                    }
+
+                    if (act_id != -1)
+                    {
+                        ares.FromInChannel = _fx_client_in.User.GetAccountWithId(act_id);
+                        if (ares.FromInChannel == null)
+                        {
+                            res.setError("Unable to locate oanda account object for account id '" + act_id + "'.", FXClientResponseType.Invalid, false);
+                            return res;
+                        }
+                    }
+                    else if (act_i != -1)
+                    {
+                        ArrayList arlist = _fx_client_in.User.GetAccounts();
+                        if (act_i >= arlist.Count)
+                        {
+                            res.setError("Unable to locate oanda account object for account index '" + act_i + "'.", FXClientResponseType.Invalid, false);
+                            return res;
+                        }
+                        ares.FromInChannel = (Account)arlist[act_i];
+                    }
+
+                    return res;
+                }
+                catch (OrderException oe)
+                {
+                    _broker_log.captureException(oe);
+                    res.setError("Oanda Order Exception : " + oe.Message, FXClientResponseType.Invalid, false);
+                    return res;
+                }
+                catch (AccountException ae)
+                {
+                    _broker_log.captureException(ae);
+                    res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
+                    return res;
+                }
+                catch (SessionException se)
+                {
+                    _broker_log.captureException(se);
+                    res.setError("Oanda Session Exception : " + se.Message, FXClientResponseType.Disconnected, false);
+                    return res;
+                }
+                catch (OAException oae)
+                {
+                    _broker_log.captureException(oae);
+                    res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, false);
+                    return res;
+                }
+                catch (Exception e)
+                {
+                    _broker_log.captureException(e);
+                    res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
+                    return res;
+                }
+            }
+        }
+
+        public FXClientObjectResult<List<AccountResult>> GetFullAccountsList()
+        {
+            List<AccountResult> act_list = new List<AccountResult>();
+            FXClientObjectResult<List<AccountResult>> res = new FXClientObjectResult<List<AccountResult>>();
 
             try
             {
-                if (!_fx_client_in.IsLoggedIn)
+                lock (_in_channel_lock)
                 {
-                    res.setError("Broker is not connected!", FXClientResponseType.Disconnected, true);
-                    return res;
+                    if (!_fx_client_in.IsLoggedIn)
+                    {
+                        res.setError("Broker is not connected!", FXClientResponseType.Disconnected, true);
+                        return res;
+                    }
+
+                    ArrayList in_alist = _fx_client_in.User.GetAccounts();
+                    foreach (Account a in in_alist)
+                    {
+                        AccountResult ar = new AccountResult();
+                        ar.FromInChannel = a;
+                        act_list.Add(ar);
+                    }
                 }
 
+                //check the connection on the out channel...
                 if (!outChannelIsInit)
                 {
                     FXClientResult cres = connectOut();
@@ -2415,66 +2564,36 @@ namespace RightEdgeOandaPlugin
                     }
                 }
 
-                if (act_id != -1)
+                lock (_out_channel_lock)
                 {
-                    ares.FromOutChannel = _fx_client_out.User.GetAccountWithId(act_id);
-                    if (ares.FromOutChannel == null)
-                    {
-                        res.setError("Unable to locate oanda account object for account id '" + act_id + "'.", FXClientResponseType.Invalid, false);
+                    ArrayList out_alist = _fx_client_out.User.GetAccounts();
+
+                    if (out_alist.Count != act_list.Count)
+                    {//account list mismatch
+                        res.setError("The input and output channel account count mismatch. in{" + act_list.Count + "} != out{" + out_alist.Count + "}");
                         return res;
                     }
-                    res.ResultObject = ares;
-                }
-                else if (act_i != -1)
-                {
-                    ArrayList arlist = _fx_client_out.User.GetAccounts();
-                    if (act_i >= arlist.Count)
+
+                    for (int i = 0; i < out_alist.Count; i++)
                     {
-                        res.setError("Unable to locate oanda account object for account index '" + act_i + "'.", FXClientResponseType.Invalid, false);
-                        return res;
+                        Account a = (Account)out_alist[i];
+
+                        Account ina = act_list[i].FromInChannel;
+                        if (ina == null)
+                        {
+                            res.setError("AccountResult list element missing Account object.");
+                            return res;
+                        }
+                        if (ina.AccountId != a.AccountId)
+                        {//account lists are in different orders...
+                            res.setError("Account lists are in different orders on the channels....need to implement a better match algorythm...");
+                            return res;
+                        }
+                        act_list[i].FromOutChannel = a;
                     }
-                    ares.FromOutChannel = (Account)arlist[act_i];
-                    res.ResultObject = ares;
-                }
-                else
-                {
-                    res.setError("Unable to parse account string '" + p + "'.", FXClientResponseType.Rejected, false);
-                    return res;
                 }
 
-
-                if (act_id != -1)
-                {
-                    ares.FromInChannel = _fx_client_in.User.GetAccountWithId(act_id);
-                    if (ares.FromInChannel == null)
-                    {
-                        res.setError("Unable to locate oanda account object for account id '" + act_id + "'.", FXClientResponseType.Invalid, false);
-                        return res;
-                    }
-                }
-                else if (act_i != -1)
-                {
-                    ArrayList arlist = _fx_client_in.User.GetAccounts();
-                    if (act_i >= arlist.Count)
-                    {
-                        res.setError("Unable to locate oanda account object for account index '" + act_i + "'.", FXClientResponseType.Invalid, false);
-                        return res;
-                    }
-                    ares.FromInChannel = (Account)arlist[act_i];
-                }
-
-                return res;
-            }
-            catch (OrderException oe)
-            {
-                _broker_log.captureException(oe);
-                res.setError("Oanda Order Exception : " + oe.Message, FXClientResponseType.Invalid, false);
-                return res;
-            }
-            catch (AccountException ae)
-            {
-                _broker_log.captureException(ae);
-                res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
+                res.ResultObject = act_list;
                 return res;
             }
             catch (SessionException se)
@@ -2483,16 +2602,16 @@ namespace RightEdgeOandaPlugin
                 res.setError("Oanda Session Exception : " + se.Message, FXClientResponseType.Disconnected, false);
                 return res;
             }
+            catch (AccountException ae)
+            {
+                _broker_log.captureException(ae);
+                res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
+                return res;
+            }
             catch (OAException oae)
             {
                 _broker_log.captureException(oae);
-                res.setError("General Oanda Exception : " + oae.Message, FXClientResponseType.Rejected, false);
-                return res;
-            }
-            catch (Exception e)
-            {
-                _broker_log.captureException(e);
-                res.setError("Unhandled Exception : " + e.Message, FXClientResponseType.Rejected, false);
+                res.setError("Oanda General Exception : " + oae.Message, FXClientResponseType.Rejected, false);
                 return res;
             }
         }
@@ -2929,7 +3048,6 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
-
    
         public FXClientObjectResult<double> GetMarginAvailable(Account account)
         {
@@ -3103,88 +3221,6 @@ namespace RightEdgeOandaPlugin
                 return res;
             }
         }
-
-        public FXClientObjectResult<List<AccountResult>> GetFullAccountsList()
-        {
-            List<AccountResult> act_list = new List<AccountResult>();
-            FXClientObjectResult<List<AccountResult>> res = new FXClientObjectResult<List<AccountResult>>();
-
-            try
-            {
-                if (!_fx_client_in.IsLoggedIn)
-                {
-                    res.setError("Broker is not connected!", FXClientResponseType.Disconnected, true);
-                    return res;
-                }
-
-                ArrayList in_alist = _fx_client_in.User.GetAccounts();
-                foreach (Account a in in_alist)
-                {
-                    AccountResult ar = new AccountResult();
-                    ar.FromInChannel = a;
-                    act_list.Add(ar);
-                }
-
-                //check the connection on the out channel...
-                if (!outChannelIsInit)
-                {
-                    FXClientResult cres = connectOut();
-                    if (cres.Error)
-                    {
-                        res.setError(cres.Message, cres.FXClientResponse, cres.Disconnected);
-                        return res;
-                    }
-                }
-
-                ArrayList out_alist = _fx_client_out.User.GetAccounts();
-
-                if (out_alist.Count != act_list.Count)
-                {//account list mismatch
-                    res.setError("The input and output channel account count mismatch. in{" + act_list.Count + "} != out{" + out_alist.Count + "}");
-                    return res;
-                }
-
-                for (int i = 0; i < out_alist.Count; i++)
-                {
-                    Account a = (Account)out_alist[i];
-
-                    Account ina = act_list[i].FromInChannel;
-                    if (ina == null)
-                    {
-                        res.setError("AccountResult list element missing Account object.");
-                        return res;
-                    }
-                    if (ina.AccountId != a.AccountId)
-                    {//account lists are in different orders...
-                        res.setError("Account lists are in different orders on the channels....need to implement a better match algorythm...");
-                        return res;
-                    }
-                    act_list[i].FromOutChannel = a;
-                }
-
-                res.ResultObject = act_list;
-                return res;
-            }
-            catch (SessionException se)
-            {
-                _broker_log.captureException(se);
-                res.setError("Oanda Session Exception : " + se.Message,FXClientResponseType.Disconnected,false);
-                return res;
-            }
-            catch (AccountException ae)
-            {
-                _broker_log.captureException(ae);
-                res.setError("Oanda Account Exception : " + ae.Message, FXClientResponseType.Invalid, false);
-                return res;
-            }
-            catch (OAException oae)
-            {
-                _broker_log.captureException(oae);
-                res.setError("Oanda General Exception : " + oae.Message, FXClientResponseType.Rejected, false);
-                return res;
-            }
-        }
-
     }
 
     public class ResponseProcessor
@@ -3216,6 +3252,7 @@ namespace RightEdgeOandaPlugin
             }
             _response_processor = new Thread(threadMain);
             _response_processor.Name = "OandA Response Processor";
+            //_response_processor.IsBackground = true; <-- this seems to prevent the WaitSleepJoin/Interrupt()
             _response_processor.Start();
         }
         public void Stop()
