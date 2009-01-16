@@ -48,6 +48,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="AssemblyInfo.in" />
     <Compile Include="CustomComparableDictionaryControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -138,6 +139,7 @@
     </EmbeddedResource>
     <EmbeddedResource Include="CustomComparableDictionaryForm.resx">
       <DependentUpon>CustomComparableDictionaryForm.cs</DependentUpon>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="options_control.resx">
       <DependentUpon>options_control.cs</DependentUpon>
@@ -194,5 +196,6 @@
   -->
   <PropertyGroup>
     <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\"</PostBuildEvent>
+    <PreBuildEvent>"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin "$(ProjectDir)AssemblyInfo.in" "$(ProjectDir)Properties\AssemblyInfo.cs"</PreBuildEvent>
   </PropertyGroup>
 </Project>

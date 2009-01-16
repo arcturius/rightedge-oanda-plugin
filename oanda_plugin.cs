@@ -32,6 +32,7 @@ TODO :
    when the out channel is reconnected due to an oanda exception
    
  * fix cross price pair selection logic and calculation math
+ * add a "tradeable pair" lookup table to prevent cross price quote requests on non-existant symbols
  
  * be sure all bounds violation events from oanda are handled
    market opens, limit fills, stop/target fills, etc...
@@ -1592,6 +1593,7 @@ namespace RightEdgeOandaPlugin
 
         private bool _use_temp_log = true;
         private string _log_file = "C:\\Storage\\src\\RE-LogFiles\\account_responder.log";
+        //private string _log_file = "D:\\Storage\\RightEdge-Logs\\account_responder.log";
         private PluginLog _temp_log = null;
 
         private OandAPlugin _parent = null;
@@ -1635,7 +1637,7 @@ namespace RightEdgeOandaPlugin
     public class fxClientWrapper
     {
         private OandAPlugin _parent;
-        public fxClientWrapper(OandAPlugin p) { _parent = p; }
+        public fxClientWrapper(OandAPlugin p) { _parent = p; populateTradeableSymbols(); }
         ~fxClientWrapper()
         {
             if (_fx_client_in != null)
@@ -1666,8 +1668,6 @@ namespace RightEdgeOandaPlugin
 
         //execution will happen over the _out channel
         private fxClient _fx_client_out = null;
-
-
 
         public bool IsInit { get { return (_fx_client_in != null); } }
 
@@ -1986,6 +1986,7 @@ namespace RightEdgeOandaPlugin
         }
 
         private object _lock = new object();
+        private List<Symbol> _restart_syms = null;
 
         private void watchdogMain()
         {
@@ -2022,11 +2023,15 @@ namespace RightEdgeOandaPlugin
                             return;
                         }
 
-                        //store watched symbols...
-                        List<Symbol> syms = new List<Symbol>();
-                        foreach (RateTicker rt in _parent.RateTickers)
-                        {
-                            syms.Add(rt.Symbol);
+                        
+                        if (_restart_syms == null)
+                        {//store watched symbols...
+                            _restart_syms = new List<Symbol>();
+                            foreach (RateTicker rt in _parent.RateTickers)
+                            {
+                                _restart_syms.Add(rt.Symbol);
+                            }
+                            _parent.RateTickers.Clear();
                         }
 
                         //cleanup the now disconnected _in channel client...
@@ -2045,12 +2050,15 @@ namespace RightEdgeOandaPlugin
 
                         //reload watched symbols...
 
-                        if (!_parent.SetWatchedSymbols(syms))
+                        if (!_parent.SetWatchedSymbols(_restart_syms))
                         {//_parent will log errors...
                             if (have_lock) { have_lock = false; Monitor.Exit(_lock); }
                             return;
                         }
-
+                        
+                        _restart_syms.Clear();
+                        _restart_syms = null;
+                        
                         _watchdog_restart_complete_count++;
                         if (_watchdog_restart_complete_count > _watchdog_restart_complete_threshold)
                         {
@@ -2235,7 +2243,7 @@ namespace RightEdgeOandaPlugin
                 double b_pr;
                 FXClientObjectResult<double> b_res = null;
 
-                if (!found) //determine Quote/act_currency cross price factor
+                if (!found && symbolExists(trans.Quote, act_currency)) //determine Quote/act_currency cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, trans.Quote, act_currency);
                     if (!b_res.Error)
@@ -2257,7 +2265,7 @@ namespace RightEdgeOandaPlugin
                     }
                 }
 
-                if (!found) //determine act_currency/Quote cross price factor
+                if (!found && symbolExists(act_currency, trans.Quote)) //determine act_currency/Quote cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, act_currency, trans.Quote);
                     if (!b_res.Error)
@@ -2279,8 +2287,8 @@ namespace RightEdgeOandaPlugin
                     }
 
                 }
-                
-                if (!found) //determine a Base/act_currency cross price factor
+
+                if (!found && symbolExists(trans.Base, act_currency)) //determine a Base/act_currency cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, trans.Base, act_currency);
                     if (!b_res.Error)
@@ -2302,7 +2310,7 @@ namespace RightEdgeOandaPlugin
                     }
                 }
 
-                if (!found) //determine act_currency/Base cross price factor
+                if (!found && symbolExists(act_currency, trans.Base)) //determine act_currency/Base cross price factor
                 {
                     b_res = determineRate(trans.IsBuy(), trans.Timestamp, act_currency, trans.Base);
                     if (!b_res.Error)
@@ -2336,6 +2344,39 @@ namespace RightEdgeOandaPlugin
             fill.Quantity = (trans.Units < 0) ? (-1 * trans.Units) : trans.Units;
             res.ResultObject = fill;
             return res;
+        }
+
+        private SerializableDictionary<string, List<string>> _tradeable_symbols = new SerializableDictionary<string, List<string>>();
+        private void populateTradeableSymbols()
+        {//FIX ME - add all the tradeable pairs at oanda
+            string []l1;
+            List<string> l2;
+            
+            // EUR/USD, EUR/JPY, EUR/TRY, EUR/GBP
+            l1 = new[] { "USD", "JPY", "TRY", "GBP" };
+            l2 = new List<string>(l1);
+            _tradeable_symbols.Add("EUR", l2);
+
+            // USD/JPY, USD/TRY
+            l1 = new[] { "JPY", "TRY" };
+            l2 = new List<string>(l1);
+            _tradeable_symbols.Add("USD", l2);
+
+            //GBP/USD
+            l1 = new[] { "USD" };
+            l2 = new List<string>(l1);
+            _tradeable_symbols.Add("GBP", l2);
+            
+            //AUD/USD
+            l1 = new[] { "USD" };
+            l2 = new List<string>(l1);
+            _tradeable_symbols.Add("AUD", l2);
+        }
+
+        private bool symbolExists(string base_cur, string quote_cur)
+        {
+            if (!_tradeable_symbols.ContainsKey(base_cur)) { return false; }
+            return _tradeable_symbols[base_cur].Contains(quote_cur);
         }
 
         private bool outChannelIsInit { get { return (_fx_client_out != null && _fx_client_out.IsLoggedIn); } }
@@ -6618,6 +6659,8 @@ namespace RightEdgeOandaPlugin
 
                 if (pos.TargetOrder.BrokerOrder.OrderState == BrokerOrderState.PendingCancel)
                 {
+                    _log.captureDebug("finalizer delaying position target cleanup...");
+                    /*
                     _log.captureDebug("finalizer canceling position target");
                     bool isre = pos.TargetOrder.IsRightEdgeOrder;
                     pos.TargetOrder = null;
@@ -6626,6 +6669,7 @@ namespace RightEdgeOandaPlugin
                         tbo.OrderState = BrokerOrderState.Cancelled;
                         _parent.FireOrderUpdated(tbo, null, "ptarget canceled on " + s);
                     }
+                    */
                 }
                 else if (pos.TargetOrder.BrokerOrder.OrderState == BrokerOrderState.Filled)
                 {
@@ -6639,6 +6683,8 @@ namespace RightEdgeOandaPlugin
 
                 if (sbo.OrderState == BrokerOrderState.PendingCancel)
                 {
+                    _log.captureDebug("finalizer delaying position stop cleanup...");
+                    /*
                     _log.captureDebug("finalizer canceling position stop");
                     bool isre = pos.StopOrder.IsRightEdgeOrder;
                     pos.StopOrder = null;
@@ -6647,6 +6693,7 @@ namespace RightEdgeOandaPlugin
                         sbo.OrderState = BrokerOrderState.Cancelled;
                         _parent.FireOrderUpdated(sbo, null, "pstop canceled on " + s);
                     }
+                    */
                 }
                 else if (sbo.OrderState == BrokerOrderState.Filled)
                 {
@@ -6884,7 +6931,7 @@ namespace RightEdgeOandaPlugin
 
         public string Version()
         {
-            return "0.1a";
+            throw new Exception("Version() was not being utilized by RightEdge");
         }
 
         public string id()
@@ -7155,7 +7202,7 @@ namespace RightEdgeOandaPlugin
                 return false;
             }
 
-            //force cleanup of the log opjects on Disconnect() since the destructor ~OandaPlugin() may not get called
+            //force cleanup of the log objects on Disconnect() since the destructor ~OandaPlugin() may not get called
             if (_history_log != null) { _history_log.closeLog(); _history_log = null; }
             if (_tick_log != null) { _tick_log.closeLog(); _tick_log = null; }
             if (_log != null) { _log.closeLog(); _log = null; }
