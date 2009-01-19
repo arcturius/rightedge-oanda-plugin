@@ -1752,20 +1752,9 @@ namespace RightEdgeOandaPlugin
         private bool _is_restart = false;
 
         private Thread _watchdog_thread = null;
-        private List<Symbol> _watchdog_restart_symbols = null;
-
         private int _watchdog_restart_attempt_count = 0;
         private int _watchdog_restart_complete_count = 0;
-
-        ////////////////////////////////////////////////////////////////////////////////
-        //FIX ME - it would be nice to make these plugin options...
-        private int _watchdog_restart_attempt_threshold = 3;
-        private int _watchdog_restart_complete_threshold = 15;
-
-        private int _watchdog_restart_delay = 10;
-        private int _watchdog_min_time_to_sleep = 10;
-        private int _watchdog_max_time_to_sleep = 120;
-        ////////////////////////////////////////////////////////////////////////////////
+        private const int _watchdog_restart_complete_threshold = 15;
 
         private TradeableSymbols _tradeable_symbols = null;
 
@@ -2079,7 +2068,6 @@ namespace RightEdgeOandaPlugin
 
         private void watchdogMain()
         {
-            bool is_logged_in = false;
             try
             {
                 do
@@ -2091,8 +2079,7 @@ namespace RightEdgeOandaPlugin
 
                     lock (_in_channel_lock)
                     {
-                        is_logged_in = _fx_client_in.IsLoggedIn;
-                        if (is_logged_in)
+                        if ((_fx_client_in != null) && (_fx_client_in.IsLoggedIn))
                         {
                             _log.captureDebug("Watchdog determined connection is ok.");
                             continue;
@@ -2102,22 +2089,18 @@ namespace RightEdgeOandaPlugin
                         _watchdog_restart_attempt_count++;
                         _log.captureError("Watchdog found data stream was not logged in. Attempting restart number '" + _watchdog_restart_attempt_count + "'...", "watchdogMain Error");
 
-                        if (_watchdog_restart_attempt_count > _watchdog_restart_attempt_threshold)
                         if (_watchdog_restart_attempt_count > _opts.WatchdogMaxReconnectThreshold)
                         {
-                            _log.captureError("Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" + _watchdog_restart_attempt_threshold + "'.", "watchdogMain Error");
+                            _log.captureError("Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" + _opts.WatchdogMaxReconnectThreshold + "'.", "watchdogMain Error");
                             return;
                         }
 
-                        if (_watchdog_restart_symbols == null)
-                        {//store watched symbols...
-                            _watchdog_restart_symbols = new List<Symbol>();
-                            foreach (RateTicker rt in _parent.RateTickers)
-                            {
-                                _watchdog_restart_symbols.Add(rt.Symbol);
-                            }
-                            _parent.RateTickers.Clear();
+                        List<Symbol> syms = new List<Symbol>();
+                        foreach (RateTicker rt in _parent.RateTickers)
+                        {
+                            syms.Add(rt.Symbol);
                         }
+                        _parent.RateTickers.Clear();
 
                         //cleanup the now disconnected _in channel client...
                         if (_fx_client_in != null)
@@ -2134,25 +2117,22 @@ namespace RightEdgeOandaPlugin
                         }
 
                         //reload watched symbols...
-                        if (!_parent.SetWatchedSymbols(_watchdog_restart_symbols))
+                        if (!_parent.SetWatchedSymbols(syms))
                         {//_parent will log errors...
                             return;
                         }
-
-                        _watchdog_restart_symbols.Clear();
-                        _watchdog_restart_symbols = null;
-
-                        _watchdog_restart_complete_count++;
-                        if (_watchdog_restart_complete_count > _watchdog_restart_complete_threshold)
-                        {
-                            _log.captureDebug("Watchdog restarts '" + _watchdog_restart_complete_count + "' exceed threshold '" + _watchdog_restart_complete_threshold + "'. Your connection is unstable!");
-                        }
-                        else
-                        {
-                            _log.captureDebug("Watchdog restarted connection.");
-                        }
-                        _watchdog_restart_attempt_count = 0;
                     }
+
+                    _watchdog_restart_complete_count++;
+                    if (_watchdog_restart_complete_count > _watchdog_restart_complete_threshold)
+                    {
+                        _log.captureDebug("Watchdog restarts '" + _watchdog_restart_complete_count + "' exceed threshold '" + _watchdog_restart_complete_threshold + "'. Your connection is unstable!");
+                    }
+                    else
+                    {
+                        _log.captureDebug("Watchdog restarted connection.");
+                    }
+                    _watchdog_restart_attempt_count = 0;
                 } while (true);
             }
             catch (ThreadAbortException)
