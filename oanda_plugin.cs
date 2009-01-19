@@ -1242,6 +1242,10 @@ namespace RightEdgeOandaPlugin
             _default_lower_type = rsrc._default_lower_type;
             _default_upper_bound = rsrc._default_upper_bound;
             _default_upper_type = rsrc._default_upper_type;
+
+            _watchdog_restart_attempt_threshold = rsrc._watchdog_restart_attempt_threshold;
+            _watchdog_min_time_to_sleep = rsrc._watchdog_min_time_to_sleep;
+            _watchdog_max_time_to_sleep = rsrc._watchdog_max_time_to_sleep;
         }
 
         #region RightEdge 'serialization'
@@ -1306,6 +1310,10 @@ namespace RightEdgeOandaPlugin
                 if (settings.ContainsKey("DefaultLowerType")) { _default_lower_type = (ValueScaleType)Enum.Parse(typeof(ValueScaleType), settings["DefaultLowerType"]); }
                 if (settings.ContainsKey("DefaultUpperBound")) { _default_upper_bound = double.Parse(settings["DefaultUpperBound"]); }
                 if (settings.ContainsKey("DefaultUpperType")) { _default_upper_type = (ValueScaleType)Enum.Parse(typeof(ValueScaleType), settings["DefaultUpperType"]); }
+
+                if (settings.ContainsKey("WatchdogRestartAttemptThreshold")) { _watchdog_restart_attempt_threshold = Int32.Parse(settings["WatchdogRestartAttemptThreshold"]); }
+                if (settings.ContainsKey("WatchdogMinimumSleepTime")) { _watchdog_min_time_to_sleep = Int32.Parse(settings["WatchdogMinimumSleepTime"]); }
+                if (settings.ContainsKey("WatchdogMaximumSleepTime")) { _watchdog_max_time_to_sleep = Int32.Parse(settings["WatchdogMaximumSleepTime"]); }
             }
             catch (Exception e)
             {//settings parse/load problem....
@@ -1370,6 +1378,10 @@ namespace RightEdgeOandaPlugin
             settings["DefaultLowerType"] = _default_lower_type.ToString();
             settings["DefaultUpperBound"] = _default_upper_bound.ToString();
             settings["DefaultUpperType"] = _default_upper_type.ToString();
+
+            settings["WatchdogRestartAttemptThreshold"] = _watchdog_restart_attempt_threshold.ToString();
+            settings["WatchdogMinimumSleepTime"] = _watchdog_min_time_to_sleep.ToString();
+            settings["WatchdogMaximumSleepTime"] = _watchdog_max_time_to_sleep.ToString();
 
             return true;
         }
@@ -1552,6 +1564,18 @@ namespace RightEdgeOandaPlugin
         [Description("The time of day the weekend data stops."), Category("History Filter Options")]
         public TimeSpan WeekendEndTime { set { _weekend_end_time = value; } get { return (_weekend_end_time); } }
         #endregion
+
+        #region watchdog reconnect options
+        private int _watchdog_restart_attempt_threshold = 3;
+        [Description("The maximum number of re-connection attempts."), Category("Reconnect Options")]
+        public int WatchdogMaxReconnectThreshold { get { return _watchdog_restart_attempt_threshold; } set { _watchdog_restart_attempt_threshold = value; } }
+        private int _watchdog_min_time_to_sleep = 10;
+        [Description("The minimum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
+        public int WatchdogMinSleepTime { get { return _watchdog_min_time_to_sleep; } set { _watchdog_min_time_to_sleep = value; } }
+        private int _watchdog_max_time_to_sleep = 120;
+        [Description("The maximum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
+        public int WatchdogMaxSleepTime { get { return _watchdog_max_time_to_sleep; } set { _watchdog_max_time_to_sleep = value; } }
+        #endregion
     }
 
     #region Oanda fxEvent managers
@@ -1628,6 +1652,8 @@ namespace RightEdgeOandaPlugin
     }
     #endregion
 
+
+        
     public class fxClientWrapper
     {
         private OandAPlugin _parent;
@@ -1727,17 +1753,7 @@ namespace RightEdgeOandaPlugin
         private Thread _watchdog_thread = null;
         private int _watchdog_restart_attempt_count = 0;
         private int _watchdog_restart_complete_count = 0;
-        
-        ////////////////////////////////////////////////////////////////////////////////
-        //FIX ME - it would be nice to make these plugin options...
-        private int _watchdog_restart_attempt_threshold = 3;
-        private int _watchdog_restart_complete_threshold = 15;
-
-        private int _watchdog_restart_delay = 10;
-        private int _watchdog_min_time_to_sleep = 10;
-        private int _watchdog_max_time_to_sleep = 120;
-        ////////////////////////////////////////////////////////////////////////////////
-
+        private const int _watchdog_restart_complete_threshold = 15;
         
 
 
@@ -1964,8 +1980,8 @@ namespace RightEdgeOandaPlugin
             {
                 do
                 {
-                    int time_to_sleep = _watchdog_min_time_to_sleep + (_watchdog_restart_attempt_count * _watchdog_restart_delay);
-                    if (time_to_sleep > _watchdog_max_time_to_sleep) { time_to_sleep = _watchdog_max_time_to_sleep; }
+                    int time_to_sleep = _opts.WatchdogMinSleepTime + (_watchdog_restart_attempt_count * _opts.WatchdogMinSleepTime);
+                    if (time_to_sleep > _opts.WatchdogMaxSleepTime) { time_to_sleep = _opts.WatchdogMaxSleepTime; }
 
                     Thread.Sleep(new TimeSpan(0, 0, time_to_sleep));
 
@@ -1983,11 +1999,11 @@ namespace RightEdgeOandaPlugin
                             "Watchdog found data stream was not logged in. Attempting restart number '" +
                             _watchdog_restart_attempt_count + "'...", "watchdogMain Error");
 
-                        if (_watchdog_restart_attempt_count > _watchdog_restart_attempt_threshold)
+                        if (_watchdog_restart_attempt_count > _opts.WatchdogMaxReconnectThreshold)
                         {
                             _log.captureError(
                                 "Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" +
-                                _watchdog_restart_attempt_threshold + "'.", "watchdogMain Error");
+                                _opts.WatchdogMaxReconnectThreshold + "'.", "watchdogMain Error");
                             return;
                         }
 
