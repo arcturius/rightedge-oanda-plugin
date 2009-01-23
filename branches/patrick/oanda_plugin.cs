@@ -1578,14 +1578,27 @@ namespace RightEdgeOandaPlugin
         #region watchdog reconnect options
         private int _watchdog_restart_attempt_threshold = 3;
         [Description("The maximum number of re-connection attempts."), Category("Reconnect Options")]
-        public int ReconnectMaximumAttempts { get { return _watchdog_restart_attempt_threshold; } set { _watchdog_restart_attempt_threshold = value; } }
+        public int ReconnectMaximumAttempts { get { return _watchdog_restart_attempt_threshold; } set { _watchdog_restart_attempt_threshold = EnsureMinMaxValue(value, 0, Int32.MaxValue); } }
         private int _watchdog_min_time_to_sleep = 10;
         [Description("The minimum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
-        public int ReconnectMinimumSleepTime { get { return _watchdog_min_time_to_sleep; } set { _watchdog_min_time_to_sleep = value; } }
+        public int ReconnectMinimumSleepTime { get { return _watchdog_min_time_to_sleep; } set { _watchdog_min_time_to_sleep = EnsureMinMaxValue(value, 5, 240); } }
         private int _watchdog_max_time_to_sleep = 120;
         [Description("The maximum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
-        public int ReconnectMaximumSleepTime { get { return _watchdog_max_time_to_sleep; } set { _watchdog_max_time_to_sleep = value; } }
+        public int ReconnectMaximumSleepTime { get { return _watchdog_max_time_to_sleep; } set { _watchdog_max_time_to_sleep = EnsureMinMaxValue(value, 120, 3600); } }
         #endregion
+
+        private static int EnsureMinMaxValue(int value, int MIN_VALUE, int MAX_VALUE)
+        {
+            if (value < MIN_VALUE)
+            {
+                return MIN_VALUE;
+            }
+            if (value > MAX_VALUE)
+            {
+                return MAX_VALUE;
+            }
+            return value;
+        }
     }
 
     #region Oanda fxEvent managers
