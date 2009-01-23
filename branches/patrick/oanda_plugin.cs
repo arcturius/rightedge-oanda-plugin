@@ -1578,13 +1578,13 @@ namespace RightEdgeOandaPlugin
         #region watchdog reconnect options
         private int _watchdog_restart_attempt_threshold = 3;
         [Description("The maximum number of re-connection attempts."), Category("Reconnect Options")]
-        public int WatchdogMaxReconnectThreshold { get { return _watchdog_restart_attempt_threshold; } set { _watchdog_restart_attempt_threshold = value; } }
+        public int ReconnectMaximumAttempts { get { return _watchdog_restart_attempt_threshold; } set { _watchdog_restart_attempt_threshold = value; } }
         private int _watchdog_min_time_to_sleep = 10;
         [Description("The minimum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
-        public int WatchdogMinSleepTime { get { return _watchdog_min_time_to_sleep; } set { _watchdog_min_time_to_sleep = value; } }
+        public int ReconnectMinimumSleepTime { get { return _watchdog_min_time_to_sleep; } set { _watchdog_min_time_to_sleep = value; } }
         private int _watchdog_max_time_to_sleep = 120;
         [Description("The maximum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
-        public int WatchdogMaxSleepTime { get { return _watchdog_max_time_to_sleep; } set { _watchdog_max_time_to_sleep = value; } }
+        public int ReconnectMaximumSleepTime { get { return _watchdog_max_time_to_sleep; } set { _watchdog_max_time_to_sleep = value; } }
         #endregion
     }
 
@@ -2072,8 +2072,8 @@ namespace RightEdgeOandaPlugin
             {
                 do
                 {
-                    int time_to_sleep = _opts.WatchdogMinSleepTime + (_watchdog_restart_attempt_count * _opts.WatchdogMinSleepTime);
-                    if (time_to_sleep > _opts.WatchdogMaxSleepTime) { time_to_sleep = _opts.WatchdogMaxSleepTime; }
+                    int time_to_sleep = _opts.ReconnectMinimumSleepTime + (_watchdog_restart_attempt_count * _opts.ReconnectMinimumSleepTime);
+                    if (time_to_sleep > _opts.ReconnectMaximumSleepTime) { time_to_sleep = _opts.ReconnectMaximumSleepTime; }
 
                     Thread.Sleep(new TimeSpan(0, 0, time_to_sleep));
 
@@ -2089,9 +2089,9 @@ namespace RightEdgeOandaPlugin
                         _watchdog_restart_attempt_count++;
                         _log.captureError("Watchdog found data stream was not logged in. Attempting restart number '" + _watchdog_restart_attempt_count + "'...", "watchdogMain Error");
 
-                        if (_watchdog_restart_attempt_count > _opts.WatchdogMaxReconnectThreshold)
+                        if (_watchdog_restart_attempt_count > _opts.ReconnectMaximumAttempts)
                         {
-                            _log.captureError("Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" + _opts.WatchdogMaxReconnectThreshold + "'.", "watchdogMain Error");
+                            _log.captureError("Watchdog restart attempts '" + _watchdog_restart_attempt_count + "' exceed threshold '" + _opts.ReconnectMaximumAttempts + "'.", "watchdogMain Error");
                             return;
                         }
 
