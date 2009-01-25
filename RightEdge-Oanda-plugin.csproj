@@ -12,6 +12,7 @@
     <AssemblyName>RightEdgeOandaPlugin</AssemblyName>
     <TargetFrameworkVersion>v2.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <RunPostBuildEvent>OnBuildSuccess</RunPostBuildEvent>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -32,7 +33,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Common, Version=2008.1.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\..\..\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\Common.dll</HintPath>
     </Reference>
     <Reference Include="fxClientAPI_2005, Version=0.0.0.0, Culture=neutral, processorArchitecture=x86">
@@ -93,8 +93,7 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
-    <Compile Include="TradeEntities.cs">
-    </Compile>
+    <Compile Include="TradeEntities.cs" />
     <Compile Include="TradeEntitiesControl.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -184,7 +183,9 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\EditTradeEntitiesButton.bmp" />
+    <None Include="Resources\AccountValuesMonitor_16x16x8.bmp" />
+    <None Include="Resources\EditTradeEntities_16x16x8.bmp" />
+    <Content Include="Resources\RightEdgeOandaPlugin.ico" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
@@ -195,7 +196,8 @@
   </Target>
   -->
   <PropertyGroup>
-    <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\"</PostBuildEvent>
+    <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\"
+"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.in" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.vdproj"</PostBuildEvent>
     <PreBuildEvent>"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "$(ProjectDir)AssemblyInfo.in" "$(ProjectDir)Properties\AssemblyInfo.cs"</PreBuildEvent>
   </PropertyGroup>
 </Project>
