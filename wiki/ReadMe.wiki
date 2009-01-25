@@ -2,15 +2,15 @@
 =Introduction=
 
 Ultimately, the goal of this project has been to expose the full realm of
-Oanda's trade execution capabilities to the RightEdge envireonment. This update
+Oanda's trade execution capabilities to the RightEdge environment. This update
 completes the full feature set implementation and we're now ready for some
 rigorous testing.
 
 The RightEdge IBroker interface working with the Position Manager object is
-inherintly tied to a single account. Therefore, to support multiple trading
+inherently tied to a single account. Therefore, to support multiple trading
 accounts through a single running system an alternative had to be constructed.
 The end result was two data files, Trade Entities and Account Values, which
-can be kept in sync between the oanda plugin and the running trading
+can be kept in sync between the Oanda plugin and the running trading
 system.
 
 ==Limitation : no "order-counters-order" trading==
