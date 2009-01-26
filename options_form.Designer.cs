@@ -34,7 +34,8 @@
             this.ButtonCancel = new System.Windows.Forms.Button();
             this.toolStripContainer1 = new System.Windows.Forms.ToolStripContainer();
             this.toolStrip1 = new System.Windows.Forms.ToolStrip();
-            this.toolStripButtonEditEntities = new System.Windows.Forms.ToolStripButton();
+            this.toolStripButton2 = new System.Windows.Forms.ToolStripButton();
+            this.toolStripButton1 = new System.Windows.Forms.ToolStripButton();
             this.tableLayoutPanel1.SuspendLayout();
             this.toolStripContainer1.ContentPanel.SuspendLayout();
             this.toolStripContainer1.TopToolStripPanel.SuspendLayout();
@@ -115,21 +116,35 @@
             // 
             this.toolStrip1.Dock = System.Windows.Forms.DockStyle.None;
             this.toolStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolStripButtonEditEntities});
-            this.toolStrip1.Location = new System.Drawing.Point(3, 0);
+            this.toolStripButton2,
+            this.toolStripButton1});
+            this.toolStrip1.Location = new System.Drawing.Point(0, 0);
             this.toolStrip1.Name = "toolStrip1";
-            this.toolStrip1.Size = new System.Drawing.Size(35, 25);
+            this.toolStrip1.Size = new System.Drawing.Size(433, 25);
+            this.toolStrip1.Stretch = true;
             this.toolStrip1.TabIndex = 0;
             // 
-            // toolStripButtonEditEntities
+            // toolStripButton2
             // 
-            this.toolStripButtonEditEntities.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
-            this.toolStripButtonEditEntities.Image = global::RightEdgeOandaPlugin.Properties.Resources.EditTradeEntitiesButton;
-            this.toolStripButtonEditEntities.ImageTransparentColor = System.Drawing.Color.Silver;
-            this.toolStripButtonEditEntities.Name = "toolStripButtonEditEntities";
-            this.toolStripButtonEditEntities.Size = new System.Drawing.Size(23, 22);
-            this.toolStripButtonEditEntities.Text = "Edit Trade Entities";
-            this.toolStripButtonEditEntities.Click += new System.EventHandler(this.toolStripEditEntities_Click);
+            this.toolStripButton2.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+            this.toolStripButton2.Image = global::RightEdgeOandaPlugin.Properties.Resources.AccountValuesMonitor_16x16x8;
+            this.toolStripButton2.ImageTransparentColor = System.Drawing.Color.Silver;
+            this.toolStripButton2.Name = "toolStripButton2";
+            this.toolStripButton2.Size = new System.Drawing.Size(23, 22);
+            this.toolStripButton2.Text = "Launch Account Values Monitor";
+            this.toolStripButton2.ToolTipText = "Launch Account Values Monitor";
+            this.toolStripButton2.Click += new System.EventHandler(this.toolStripButton2_Click);
+            // 
+            // toolStripButton1
+            // 
+            this.toolStripButton1.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+            this.toolStripButton1.Image = global::RightEdgeOandaPlugin.Properties.Resources.EditTradeEntities_16x16x8;
+            this.toolStripButton1.ImageTransparentColor = System.Drawing.Color.Silver;
+            this.toolStripButton1.Name = "toolStripButton1";
+            this.toolStripButton1.Size = new System.Drawing.Size(23, 22);
+            this.toolStripButton1.Text = "Edit Trade Entities";
+            this.toolStripButton1.ToolTipText = "Edit Trade Entities";
+            this.toolStripButton1.Click += new System.EventHandler(this.toolStripButton1_Click);
             // 
             // OandAPluginOptionsForm
             // 
@@ -162,7 +177,8 @@
         private System.Windows.Forms.Button ButtonCancel;
         private System.Windows.Forms.ToolStripContainer toolStripContainer1;
         private System.Windows.Forms.ToolStrip toolStrip1;
-        private System.Windows.Forms.ToolStripButton toolStripButtonEditEntities;
+        private System.Windows.Forms.ToolStripButton toolStripButton2;
+        private System.Windows.Forms.ToolStripButton toolStripButton1;
 
 
     }

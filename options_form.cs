@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace RightEdgeOandaPlugin
 {
@@ -27,7 +29,7 @@ namespace RightEdgeOandaPlugin
             oandAPluginOptionsControl1.Opts = _opts;
         }
 
-        private void toolStripEditEntities_Click(object sender, EventArgs e)
+        private void toolStripButton1_Click(object sender, EventArgs e)
         {
             if (string.IsNullOrEmpty(_opts.TradeEntityFileName))
             {
@@ -45,6 +47,7 @@ namespace RightEdgeOandaPlugin
             if (eres.ResultObject == null)
             {//if the file was empty, the results will be empty as well....
                 eres.ResultObject = new TradeEntities();//create some generic defaults...
+                eres.ResultObject.FileName = _opts.TradeEntityFileName;
             }
 
             TradeEntitiesForm tef = new TradeEntitiesForm(eres.ResultObject);
@@ -70,6 +73,25 @@ namespace RightEdgeOandaPlugin
         {
             DialogResult = DialogResult.Cancel;
             Close();
+        }
+
+        private void toolStripButton2_Click(object sender, EventArgs ea)
+        {
+            try
+            {
+                Process proc = new Process();
+                proc.StartInfo.WorkingDirectory = (string)Registry.GetValue("HKEY_CURRENT_USER\\Software\\RightEdgeOandaPlugin", "AppDir", "C:\\");
+                proc.StartInfo.FileName = "Monitor.exe";
+                if (!proc.Start())
+                {
+                    MessageBox.Show("There was a problem launching the monitor.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show("There was an unhandled exception!\r\n\r\n" + e.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
         }
     }
 }

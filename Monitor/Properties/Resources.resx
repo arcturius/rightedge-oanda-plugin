@@ -118,13 +118,22 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <assembly alias="System.Windows.Forms" name="System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089" />
+  <data name="AccountValuesMonitor" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\AccountValuesMonitor.ico;System.Drawing.Icon, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
   <data name="AccountValuesMonitor_16x16x8" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\AccountValuesMonitor_16x16x8.bmp;System.Drawing.Bitmap, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
   <data name="EditTradeEntities_16x16x8" type="System.Resources.ResXFileRef, System.Windows.Forms">
     <value>..\Resources\EditTradeEntities_16x16x8.bmp;System.Drawing.Bitmap, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
-  <data name="RightEdgeOandaPlugin" type="System.Resources.ResXFileRef, System.Windows.Forms">
-    <value>..\Resources\RightEdgeOandaPlugin.ico;System.Drawing.Icon, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  <data name="Status_Error" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Status_Error.bmp;System.Drawing.Bitmap, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Status_Off" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Status_Off.bmp;System.Drawing.Bitmap, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
+  </data>
+  <data name="Status_On" type="System.Resources.ResXFileRef, System.Windows.Forms">
+    <value>..\Resources\Status_On.bmp;System.Drawing.Bitmap, System.Drawing, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a</value>
   </data>
 </root>
