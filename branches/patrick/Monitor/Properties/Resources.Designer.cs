@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace RightEdgeOandaPlugin.Properties {
+namespace Monitor.Properties {
     using System;
     
     
@@ -39,7 +39,7 @@ namespace RightEdgeOandaPlugin.Properties {
         internal static global::System.Resources.ResourceManager ResourceManager {
             get {
                 if (object.ReferenceEquals(resourceMan, null)) {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("RightEdgeOandaPlugin.Properties.Resources", typeof(Resources).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Monitor.Properties.Resources", typeof(Resources).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;
@@ -60,6 +60,13 @@ namespace RightEdgeOandaPlugin.Properties {
             }
         }
         
+        internal static System.Drawing.Icon AccountValuesMonitor {
+            get {
+                object obj = ResourceManager.GetObject("AccountValuesMonitor", resourceCulture);
+                return ((System.Drawing.Icon)(obj));
+            }
+        }
+        
         internal static System.Drawing.Bitmap AccountValuesMonitor_16x16x8 {
             get {
                 object obj = ResourceManager.GetObject("AccountValuesMonitor_16x16x8", resourceCulture);
@@ -74,10 +81,24 @@ namespace RightEdgeOandaPlugin.Properties {
             }
         }
         
-        internal static System.Drawing.Icon RightEdgeOandaPlugin {
+        internal static System.Drawing.Bitmap Status_Error {
             get {
-                object obj = ResourceManager.GetObject("RightEdgeOandaPlugin", resourceCulture);
-                return ((System.Drawing.Icon)(obj));
+                object obj = ResourceManager.GetObject("Status_Error", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        internal static System.Drawing.Bitmap Status_Off {
+            get {
+                object obj = ResourceManager.GetObject("Status_Off", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        internal static System.Drawing.Bitmap Status_On {
+            get {
+                object obj = ResourceManager.GetObject("Status_On", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
             }
         }
     }

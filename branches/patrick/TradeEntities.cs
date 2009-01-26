@@ -344,6 +344,8 @@ namespace RightEdgeOandaPlugin
 
         private string _account_id = string.Empty;
         public string AccountID { get { return _account_id; } set { _account_id = value; } }
+        private string _account_name = string.Empty;
+        public string AccountName { get { return _account_name; } set { _account_name = value; } }
         private string _account_currency = string.Empty;
         public string AccountCurrency { get { return _account_currency; } set { _account_currency = value; } }
 
@@ -381,7 +383,7 @@ namespace RightEdgeOandaPlugin
             return refresh<AccountValuesStore>();
         }
 
-        public void SetBalance(string id, string c, double b)
+        public void SetBalance(string id, string n, string c, double b)
         {
             if (!_values.ContainsKey(id))
             {
@@ -389,11 +391,12 @@ namespace RightEdgeOandaPlugin
                 _values[id].AccountID = id;
                 _values[id].AccountCurrency = c;
             }
+            _values[id].AccountName = n;
             _values[id].Balance = b;
             _values[id].BalanceTimeStamp = DateTime.Now;
         }
 
-        public void SetMargin(string id, string c, double ma, double mu, double mr)
+        public void SetMargin(string id, string n, string c, double ma, double mu, double mr)
         {
             if (!_values.ContainsKey(id))
             {
@@ -401,6 +404,7 @@ namespace RightEdgeOandaPlugin
                 _values[id].AccountID = id;
                 _values[id].AccountCurrency = c;
             }
+            _values[id].AccountName = n;
             _values[id].MarginAvailable = ma;
             _values[id].MarginRate = mr;
             _values[id].MarginUsed = mu;
