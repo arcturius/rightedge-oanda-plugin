@@ -1628,12 +1628,12 @@ namespace RightEdgeOandaPlugin
 
         #region watchdog reconnect options
         private int _watchdog_restart_attempt_threshold = 3;
-        [Description("The maximum number of re-connection attempts. To re-connect indefinitly set this to 0."), Category("Reconnect Options")]
+        [Description("The maximum number of re-connection attempts. To re-connect indefinitely set this to 0."), Category("Reconnect Options")]
         public int ReconnectMaximumAttempts { get { return _watchdog_restart_attempt_threshold; } set { _watchdog_restart_attempt_threshold = EnsureMinMaxValue(value, 0, Int32.MaxValue); } }
 
         private int _watchdog_restart_complete_threshold = 15;
-        [Description("The maximum number of successful re-connections before aborting with an unstable connection. To re-connect indefinitly set this to 0."), Category("Reconnect Options")]
-        public int ReconnectAbortThreshold { get { return _watchdog_restart_complete_threshold; } set { _watchdog_restart_attempt_threshold = EnsureMinMaxValue(value, 0, Int32.MaxValue); } }
+        [Description("The maximum number of successful re-connections before aborting with an unstable connection. To re-connect indefinitely set this to 0."), Category("Reconnect Options")]
+        public int ReconnectAbortThreshold { get { return _watchdog_restart_complete_threshold; } set { _watchdog_restart_complete_threshold = EnsureMinMaxValue(value, 0, Int32.MaxValue); } }
 
         private int _watchdog_min_time_to_sleep = 10;
         [Description("The minimum delay in seconds between re-connection attempts."), Category("Reconnect Options")]
