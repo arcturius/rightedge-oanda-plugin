@@ -2648,7 +2648,7 @@ namespace RightEdgeOandaPlugin
                         }
                     }
                 }
-                if (src != AccountSources.OutChannel)//must be in or dual
+                if (src != AccountSources.InChannel)//must be out or dual
                 {
                     //check the connection on the out channel...
                     if (!outChannelIsInit)
@@ -2665,7 +2665,7 @@ namespace RightEdgeOandaPlugin
                     {
                         ArrayList out_alist = _fx_client_out.User.GetAccounts();
 
-                        if (out_alist.Count != act_list.Count)
+                        if (src == AccountSources.DualChannel && out_alist.Count != act_list.Count)
                         {//account list mismatch
                             res.setError("The input and output channel account count mismatch. in{" + act_list.Count + "} != out{" + out_alist.Count + "}");
                             return res;
@@ -2689,6 +2689,10 @@ namespace RightEdgeOandaPlugin
                                     res.setError("Account lists are in different orders on the channels....need to implement a better match algorythm...");
                                     return res;
                                 }
+                            }
+                            else
+                            {
+                                act_list.Add(new AccountResult());
                             }
                             act_list[i].FromOutChannel = a;
                         }
