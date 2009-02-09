@@ -21,7 +21,7 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "MsmKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
         }
@@ -45,20 +45,14 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_47AB83637CD2FEE2E4F22D5653BE182F"
-        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "MsmKey" = "8:_57D6CE1624F58E19E2A679CD2D803D26"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
-        "MsmKey" = "8:_47AB83637CD2FEE2E4F22D5653BE182F"
-        "OwnerKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_5EDBC572A5FD489588C7FA38FDBE37B8"
-        "OwnerKey" = "8:_UNDEFINED"
+        "MsmKey" = "8:_57D6CE1624F58E19E2A679CD2D803D26"
+        "OwnerKey" = "8:_87E871536F3C94803B6D1431917324E6"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -71,6 +65,12 @@
         {
         "MsmKey" = "8:_71C1464003A74137838692CBAEDBCD55"
         "OwnerKey" = "8:_UNDEFINED"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_87E871536F3C94803B6D1431917324E6"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -93,25 +93,25 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_92676751D66DDC50CBC116687F013263"
-        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "MsmKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
-        "MsmKey" = "8:_92676751D66DDC50CBC116687F013263"
-        "OwnerKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
-        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "MsmKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
+        "OwnerKey" = "8:_87E871536F3C94803B6D1431917324E6"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
         "MsmKey" = "8:_B3E32E3A5A434E4AA459F92E23031DBD"
+        "OwnerKey" = "8:_UNDEFINED"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_B510C597ACDD46288C4091C28FC5406D"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
         }
@@ -130,31 +130,31 @@
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_5EDBC572A5FD489588C7FA38FDBE37B8"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "OwnerKey" = "8:_B510C597ACDD46288C4091C28FC5406D"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
+        "OwnerKey" = "8:_87E871536F3C94803B6D1431917324E6"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_92676751D66DDC50CBC116687F013263"
+        "OwnerKey" = "8:_57D6CE1624F58E19E2A679CD2D803D26"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_47AB83637CD2FEE2E4F22D5653BE182F"
+        "OwnerKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
         "MsmSig" = "8:_UNDEFINED"
         }
     }
@@ -342,20 +342,20 @@
             "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
-            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_47AB83637CD2FEE2E4F22D5653BE182F"
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_57D6CE1624F58E19E2A679CD2D803D26"
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:Common, Version=2008.2.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL"
+            "AssemblyAsmDisplayName" = "8:fxClientAPI_2005, Version=0.0.0.0, Culture=neutral, processorArchitecture=x86"
                 "ScatterAssemblies"
                 {
-                    "_47AB83637CD2FEE2E4F22D5653BE182F"
+                    "_57D6CE1624F58E19E2A679CD2D803D26"
                     {
-                    "Name" = "8:Common.dll"
+                    "Name" = "8:fxClientAPI_2005.dll"
                     "Attributes" = "3:512"
                     }
                 }
-            "SourcePath" = "8:Common.dll"
+            "SourcePath" = "8:fxClientAPI_2005.dll"
             "TargetName" = "8:"
             "Tag" = "8:"
             "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
@@ -411,6 +411,37 @@
             "Register" = "3:1"
             "Exclude" = "11:FALSE"
             "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_87E871536F3C94803B6D1431917324E6"
+            {
+            "AssemblyRegister" = "3:1"
+            "AssemblyIsInGAC" = "11:FALSE"
+            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.46, Culture=neutral, processorArchitecture=MSIL"
+                "ScatterAssemblies"
+                {
+                    "_87E871536F3C94803B6D1431917324E6"
+                    {
+                    "Name" = "8:RightEdgeOandaPlugin.dll"
+                    "Attributes" = "3:512"
+                    }
+                }
+            "SourcePath" = "8:RightEdgeOandaPlugin.dll"
+            "TargetName" = "8:"
+            "Tag" = "8:"
+            "Folder" = "8:_2382596DBD404B96AC14F4605023EBF6"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_8E00CF8F9D0D4F6CA2E9E4DD25602E8E"
@@ -473,20 +504,20 @@
             "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
-            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_92676751D66DDC50CBC116687F013263"
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_96CFE453C47B79433750E7A0635B72C0"
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:fxClientAPI_2005, Version=0.0.0.0, Culture=neutral, processorArchitecture=x86"
+            "AssemblyAsmDisplayName" = "8:Common, Version=2008.2.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL"
                 "ScatterAssemblies"
                 {
-                    "_92676751D66DDC50CBC116687F013263"
+                    "_96CFE453C47B79433750E7A0635B72C0"
                     {
-                    "Name" = "8:fxClientAPI_2005.dll"
+                    "Name" = "8:Common.dll"
                     "Attributes" = "3:512"
                     }
                 }
-            "SourcePath" = "8:fxClientAPI_2005.dll"
+            "SourcePath" = "8:Common.dll"
             "TargetName" = "8:"
             "Tag" = "8:"
             "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
@@ -501,37 +532,6 @@
             "PackageAs" = "3:1"
             "Register" = "3:1"
             "Exclude" = "11:TRUE"
-            "IsDependency" = "11:TRUE"
-            "IsolateTo" = "8:"
-            }
-            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_9A56C6D0CC7265D5E17131D57C1464A4"
-            {
-            "AssemblyRegister" = "3:1"
-            "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.46, Culture=neutral, processorArchitecture=MSIL"
-                "ScatterAssemblies"
-                {
-                    "_9A56C6D0CC7265D5E17131D57C1464A4"
-                    {
-                    "Name" = "8:RightEdgeOandaPlugin.dll"
-                    "Attributes" = "3:512"
-                    }
-                }
-            "SourcePath" = "8:RightEdgeOandaPlugin.dll"
-            "TargetName" = "8:"
-            "Tag" = "8:"
-            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
             "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
@@ -786,7 +786,7 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:RightEdge Oanda Plugin"
         "ProductCode" = "8:{6042945B-A184-4B81-9946-554D0A494425}"
-        "PackageCode" = "8:{4F272F6F-827A-4A93-B17B-C1C35D0CE930}"
+        "PackageCode" = "8:{52C7349F-39A6-46BD-85E0-93D34DB70EE1}"
         "UpgradeCode" = "8:{7CC1FA71-177A-45D9-A651-EE974CAC3ED7}"
         "RestartWWWService" = "11:FALSE"
         "RemovePreviousVersions" = "11:FALSE"
@@ -959,7 +959,7 @@
             "ShowCmd" = "3:1"
             "IconIndex" = "3:0"
             "Transitive" = "11:FALSE"
-            "Target" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+            "Target" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
             "Folder" = "8:_E0DD567169CF41B983F1014DAB06174C"
             "WorkingFolder" = "8:_4BC35842039A42D392BAF753364DB851"
             "Icon" = "8:_B3E32E3A5A434E4AA459F92E23031DBD"
@@ -1522,7 +1522,7 @@
         }
         "ProjectOutput"
         {
-            "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_1C34A9B4014D4494B2B2EFD665644648"
+            "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_0C3D1DC463444D10B3A0893EB75C0933"
             {
             "SourcePath" = "8:..\\..\\Monitor\\obj\\Debug\\Monitor.exe"
             "TargetName" = "8:"
@@ -1550,12 +1550,12 @@
                 {
                 }
             }
-            "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_5EDBC572A5FD489588C7FA38FDBE37B8"
+            "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_B510C597ACDD46288C4091C28FC5406D"
             {
             "SourcePath" = "8:..\\RightEdge-Oanda-plugin-MergeModule\\Debug\\RightEdge-Oanda-plugin-MergeModule.msm"
             "TargetName" = "8:"
             "Tag" = "8:"
-            "Folder" = "8:_2382596DBD404B96AC14F4605023EBF6"
+            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
             "Condition" = "8:"
             "Transitive" = "11:FALSE"
             "Vital" = "11:TRUE"
@@ -1584,20 +1584,6 @@
                 "SourcePath" = "8:..\\RightEdge-Oanda-plugin-MergeModule\\Debug\\RightEdge-Oanda-plugin-MergeModule.msm"
                     "Properties"
                     {
-                        "_31412A1DCEFDDDF24C869FEEDFB54F6C.FD33CCB04BE64A5FA4921E2194D44F1B"
-                        {
-                        "Name" = "8:_31412A1DCEFDDDF24C869FEEDFB54F6C.FD33CCB04BE64A5FA4921E2194D44F1B"
-                        "DisplayName" = "8:"
-                        "Description" = "8:"
-                        "Type" = "3:2"
-                        "ContextData" = "8:InstallToGAC=;IsolateToManifest=_E37E96D482FCB621F9351D7AD765F650.FD33CCB04BE64A5FA4921E2194D44F1B"
-                        "Attributes" = "3:0"
-                        "Setting" = "3:2"
-                        "Value" = "8:_E37E96D482FCB621F9351D7AD765F650.FD33CCB04BE64A5FA4921E2194D44F1B"
-                        "DefaultValue" = "8:_E37E96D482FCB621F9351D7AD765F650.FD33CCB04BE64A5FA4921E2194D44F1B"
-                        "ParentName" = "8:_60E67F211D534ADBBDF161F79466199D.FD33CCB04BE64A5FA4921E2194D44F1B"
-                        "UsePlugInResources" = "11:FALSE"
-                        }
                         "_60E67F211D534ADBBDF161F79466199D.FD33CCB04BE64A5FA4921E2194D44F1B"
                         {
                         "Name" = "8:_60E67F211D534ADBBDF161F79466199D.FD33CCB04BE64A5FA4921E2194D44F1B"
@@ -1609,10 +1595,24 @@
                         "Setting" = "3:1"
                         "UsePlugInResources" = "11:FALSE"
                         }
+                        "_8B35AB1DA8662A53181C7982E5AB443F.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        {
+                        "Name" = "8:_8B35AB1DA8662A53181C7982E5AB443F.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "DisplayName" = "8:"
+                        "Description" = "8:"
+                        "Type" = "3:2"
+                        "ContextData" = "8:InstallToGAC=;IsolateToManifest=_342DE45C296F7EF23CAD17789B2B582A.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "Attributes" = "3:0"
+                        "Setting" = "3:2"
+                        "Value" = "8:_342DE45C296F7EF23CAD17789B2B582A.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "DefaultValue" = "8:_342DE45C296F7EF23CAD17789B2B582A.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "ParentName" = "8:_60E67F211D534ADBBDF161F79466199D.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "UsePlugInResources" = "11:FALSE"
+                        }
                     }
                 "LanguageId" = "3:1033"
                 "Exclude" = "11:FALSE"
-                "Folder" = "8:_2382596DBD404B96AC14F4605023EBF6"
+                "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
                 "Feature" = "8:"
                 "IsolateTo" = "8:"
                 }

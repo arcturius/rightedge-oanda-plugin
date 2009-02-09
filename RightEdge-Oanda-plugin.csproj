@@ -194,8 +194,7 @@
   </Target>
   -->
   <PropertyGroup>
-    <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\"
-"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.in" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.vdproj"</PostBuildEvent>
+    <PostBuildEvent>"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.in" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.vdproj"</PostBuildEvent>
     <PreBuildEvent>"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "$(ProjectDir)AssemblyInfo.in" "$(ProjectDir)Properties\AssemblyInfo.cs"</PreBuildEvent>
   </PropertyGroup>
 </Project>
