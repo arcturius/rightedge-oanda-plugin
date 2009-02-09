@@ -232,7 +232,7 @@
         "Module"
         {
         "ModuleSignature" = "8:MergeModule.FD33CCB04BE64A5FA4921E2194D44F1B"
-        "Version" = "8:1.1.1.45"
+        "Version" = "8:1.1.1.46"
         "Title" = "8:RightEdge-Oanda-plugin-MergeModule"
         "Subject" = "8:"
         "Author" = "8:Mark Loftis"
