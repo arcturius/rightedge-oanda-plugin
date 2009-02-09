@@ -3,7 +3,7 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProductVersion>9.0.21022</ProductVersion>
+    <ProductVersion>9.0.30729</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{85EEE2BD-3917-41D9-B00E-6F8794473CAD}</ProjectGuid>
     <OutputType>Library</OutputType>
@@ -196,8 +196,7 @@
   </Target>
   -->
   <PropertyGroup>
-    <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files\Yye Software\RightEdge 2008 Edition 1\Plugins\"
-"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.in" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.vdproj"</PostBuildEvent>
+    <PostBuildEvent>"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.in" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin\Installer\RightEdge-Oanda-plugin-MergeModule\RightEdge-Oanda-plugin-MergeModule.vdproj"</PostBuildEvent>
     <PreBuildEvent>"C:\Program Files\TortoiseSVN\bin\SubWCRev.exe" "C:\Storage\src\SubversionSandbox\RightEdge-Oanda-Plugin" "$(ProjectDir)AssemblyInfo.in" "$(ProjectDir)Properties\AssemblyInfo.cs"</PreBuildEvent>
   </PropertyGroup>
 </Project>
