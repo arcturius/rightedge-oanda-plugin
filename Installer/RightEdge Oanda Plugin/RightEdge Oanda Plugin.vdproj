@@ -45,6 +45,18 @@
         }
         "Entry"
         {
+        "MsmKey" = "8:_47AB83637CD2FEE2E4F22D5653BE182F"
+        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_47AB83637CD2FEE2E4F22D5653BE182F"
+        "OwnerKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
         "MsmKey" = "8:_5EDBC572A5FD489588C7FA38FDBE37B8"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
@@ -53,18 +65,6 @@
         {
         "MsmKey" = "8:_68404BBE98934E8C981C32F247612BDA"
         "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_6C9964A07AEF1D9DD375FF5B20C0FC21"
-        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_6C9964A07AEF1D9DD375FF5B20C0FC21"
-        "OwnerKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -136,6 +136,12 @@
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
+        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_UNDEFINED"
         "OwnerKey" = "8:_9A56C6D0CC7265D5E17131D57C1464A4"
         "MsmSig" = "8:_UNDEFINED"
         }
@@ -148,13 +154,7 @@
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_1C34A9B4014D4494B2B2EFD665644648"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_6C9964A07AEF1D9DD375FF5B20C0FC21"
+        "OwnerKey" = "8:_47AB83637CD2FEE2E4F22D5653BE182F"
         "MsmSig" = "8:_UNDEFINED"
         }
     }
@@ -342,34 +342,14 @@
             "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
-            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_68404BBE98934E8C981C32F247612BDA"
-            {
-            "SourcePath" = "8:..\\..\\Monitor\\Resources\\EditTradeEntities_16x16x8.bmp"
-            "TargetName" = "8:EditTradeEntities_16x16x8.bmp"
-            "Tag" = "8:"
-            "Folder" = "8:_0F1D4E09BF9D4B9EA4FB5FF03172B8D1"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:FALSE"
-            "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
-            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_6C9964A07AEF1D9DD375FF5B20C0FC21"
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_47AB83637CD2FEE2E4F22D5653BE182F"
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:Common, Version=2008.1.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL"
+            "AssemblyAsmDisplayName" = "8:Common, Version=2008.2.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL"
                 "ScatterAssemblies"
                 {
-                    "_6C9964A07AEF1D9DD375FF5B20C0FC21"
+                    "_47AB83637CD2FEE2E4F22D5653BE182F"
                     {
                     "Name" = "8:Common.dll"
                     "Attributes" = "3:512"
@@ -391,6 +371,26 @@
             "Register" = "3:1"
             "Exclude" = "11:TRUE"
             "IsDependency" = "11:TRUE"
+            "IsolateTo" = "8:"
+            }
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_68404BBE98934E8C981C32F247612BDA"
+            {
+            "SourcePath" = "8:..\\..\\Monitor\\Resources\\EditTradeEntities_16x16x8.bmp"
+            "TargetName" = "8:EditTradeEntities_16x16x8.bmp"
+            "Tag" = "8:"
+            "Folder" = "8:_0F1D4E09BF9D4B9EA4FB5FF03172B8D1"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_71C1464003A74137838692CBAEDBCD55"
@@ -508,7 +508,7 @@
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.1.45, Culture=neutral, processorArchitecture=MSIL"
+            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.46, Culture=neutral, processorArchitecture=MSIL"
                 "ScatterAssemblies"
                 {
                     "_9A56C6D0CC7265D5E17131D57C1464A4"
@@ -758,8 +758,8 @@
             "Folder" = "8:[REPLUGDIR]"
             "Depth" = "2:0"
             "FileName" = "8:Common.dll"
-            "MinVesion" = "8:2008.0.0.0"
-            "MaxVersion" = "8:2008.1.0.0"
+            "MinVesion" = "8:2008.1.0.0"
+            "MaxVersion" = "8:2008.2.0.0"
             "MinSize" = "8:"
             "MaxSize" = "8:"
             "MinDate" = "8:"
@@ -786,7 +786,7 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:RightEdge Oanda Plugin"
         "ProductCode" = "8:{6042945B-A184-4B81-9946-554D0A494425}"
-        "PackageCode" = "8:{FD4284F9-9780-4904-9F79-D7AB4E53C91B}"
+        "PackageCode" = "8:{4F272F6F-827A-4A93-B17B-C1C35D0CE930}"
         "UpgradeCode" = "8:{7CC1FA71-177A-45D9-A651-EE974CAC3ED7}"
         "RestartWWWService" = "11:FALSE"
         "RemovePreviousVersions" = "11:FALSE"
