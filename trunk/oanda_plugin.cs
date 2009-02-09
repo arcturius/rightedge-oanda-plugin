@@ -4817,20 +4817,18 @@ namespace RightEdgeOandaPlugin
 
         public FXClientTaskObjectResult<AccountResult> AccountResolution(string entity_id)
         {
-            return AccountResolution(entity_id, true);
+            return AccountResolution(entity_id, true, AccountSources.DualChannel);
         }
         public FXClientTaskObjectResult<AccountResult> AccountResolution(string entity_id, bool activate_responder)
         {
+            return AccountResolution(entity_id, activate_responder, AccountSources.DualChannel);
+        }
+        public FXClientTaskObjectResult<AccountResult> AccountResolution(string entity_id, bool activate_responder, AccountSources channel)
+        {
             FXClientTaskObjectResult<AccountResult> res = new FXClientTaskObjectResult<AccountResult>();
             string act_id = _trade_entities.GetAccount(entity_id);
-            
-            //if (string.IsNullOrEmpty(act_id))
-            //{
-            //    res.setError("unable to get an account identifier for entity '" + entity_id + "'", FXClientResponseType.Invalid, false);
-            //    return res;
-            //}
 
-            FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(act_id, AccountSources.DualChannel);
+            FXClientObjectResult<AccountResult> ares = _parent.fxClient.ConvertStringToAccount(act_id, channel);
             if (ares.Error)
             {
                 res.setError(ares.Message, ares.FXClientResponse, ares.Disconnected);
@@ -4838,8 +4836,8 @@ namespace RightEdgeOandaPlugin
             }
             res.ResultObject = ares.ResultObject;
 
-            if (!activate_responder) { return res; }
-
+            if (!activate_responder || channel != AccountSources.OutChannel) { return res; }
+            //must be in or dual channel and activate_responder
             Account acct = res.ResultObject.FromInChannel;
             FXClientTaskResult tres = _parent.ResponseProcessor.ActivateAccountResponder(acct);
             res.TaskCompleted = tres.TaskCompleted;
@@ -5257,7 +5255,7 @@ namespace RightEdgeOandaPlugin
                         }
                         if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
 
-                        res.setError("Stop Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                        res.setError("Stop Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'. " + fores.Message, FXClientResponseType.Rejected, false);
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -5304,11 +5302,11 @@ namespace RightEdgeOandaPlugin
 
                             if (stop_price == 0.0)
                             {
-                                _log.captureDebug("Stop Cancel Request : Unable to locate oanda limit order for pending order '" + id_num + "', but allowing cancel anyway.");
+                                _log.captureDebug("Stop Cancel Request : Still unable to locate oanda limit order for pending order '" + id_num + "', but allowing cancel anyway.");
                                 orders_sent++;//"pretend" and order was sent to trigger the handler and leave the order in PendingCancel
                                 continue;
                             }
-                            res.setError("Stop Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                            res.setError("Stop Modify Request : Still unable to locate oanda limit order for pending order '" + id_num + "'. " + fores2.Message, FXClientResponseType.Rejected, false);
                         }
                         if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
 
@@ -5346,7 +5344,7 @@ namespace RightEdgeOandaPlugin
                         }
                         if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
 
-                        res.setError("Stop Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                        res.setError("Stop Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'. " + fores.Message, FXClientResponseType.Rejected, false);
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -5394,11 +5392,11 @@ namespace RightEdgeOandaPlugin
                             }
                             if (stop_price == 0.0)
                             {
-                                _log.captureDebug("Stop Cancel Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "', but allowing cancel anyway.");
+                                _log.captureDebug("Stop Cancel Request : Still unable to locate oanda trade (market order) for filled order '" + id_num + "', but allowing cancel anyway.");
                                 orders_sent++;//"pretend" and order was sent to trigger the handler and leave the order in PendingCancel
                                 continue;
                             }
-                            res.setError("Stop Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                            res.setError("Stop Modify Request : Still unable to locate oanda trade (market order) for filled order '" + id_num + "'. " + fores2.Message, FXClientResponseType.Rejected, false);
                         }
                         if (stop_added && orders_sent == 0) { bpr.StopOrder = null; }
                         res.OrdersSent = orders_sent;
@@ -5527,7 +5525,7 @@ namespace RightEdgeOandaPlugin
                         }
 
                         if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
-                        res.setError("Target Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                        res.setError("Target Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'. " + fores.Message, FXClientResponseType.Rejected, false);
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -5549,7 +5547,7 @@ namespace RightEdgeOandaPlugin
                             return res;
                         }
 
-                        //gett a fresh account object (if the output channel was lost, the previous one will be invalid)
+                        //get a fresh account object (if the output channel was lost, the previous one will be invalid)
                         FXClientTaskObjectResult<AccountResult> acres = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
                         if (acres.Error)
                         {
@@ -5574,11 +5572,11 @@ namespace RightEdgeOandaPlugin
 
                             if (target_price == 0.0)
                             {
-                                _log.captureDebug("Target Cancel Request : Unable to locate oanda limit order for pending order '" + id_num + "', but allowing cancel anyway.");
+                                _log.captureDebug("Target Cancel Request : Still unable to locate oanda limit order for pending order '" + id_num + "', but allowing cancel anyway.");
                                 orders_sent++;//"pretend" and order was sent to trigger the handler and leave the order in PendingCancel
                                 continue;
                             }
-                            res.setError("Target Modify Request : Unable to locate oanda limit order for pending order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                            res.setError("Target Modify Request : Still unable to locate oanda limit order for pending order '" + id_num + "'. " + fores2.Message, FXClientResponseType.Rejected, false);
                         }
                         if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
 
@@ -5615,7 +5613,7 @@ namespace RightEdgeOandaPlugin
                         }
 
                         if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
-                        res.setError("Target Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                        res.setError("Target Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'. " + fores.Message, FXClientResponseType.Rejected, false);
                         res.OrdersSent = orders_sent;
                         return res;
                     }
@@ -5638,7 +5636,7 @@ namespace RightEdgeOandaPlugin
                             return res;
                         }
 
-                        //gett a fresh account object (if the output channel was lost, the previous one will be invalid)
+                        //get a fresh account object (if the output channel was lost, the previous one will be invalid)
                         FXClientTaskObjectResult<AccountResult> acres = AccountResolution(TradeEntityID.CreateID(_opts.TradeEntityName, order));
                         if (acres.Error)
                         {
@@ -5663,11 +5661,11 @@ namespace RightEdgeOandaPlugin
 
                             if (target_price == 0.0)
                             {
-                                _log.captureDebug("Target Cancel Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "', but allowing cancel anyway.");
+                                _log.captureDebug("Target Cancel Request : Still unable to locate oanda trade (market order) for filled order '" + id_num + "', but allowing cancel anyway.");
                                 orders_sent++;//"pretend" and order was sent to trigger the handler and leave the order in PendingCancel
                                 continue;
                             }
-                            res.setError("Target Modify Request : Unable to locate oanda trade (market order) for filled order '" + id_num + "'.", FXClientResponseType.Rejected, false);
+                            res.setError("Target Modify Request : Still unable to locate oanda trade (market order) for filled order '" + id_num + "'. " + fores2.Message, FXClientResponseType.Rejected, false);
                         }
                         if (target_added && orders_sent == 0) { bpr.TargetOrder = null; }
 
