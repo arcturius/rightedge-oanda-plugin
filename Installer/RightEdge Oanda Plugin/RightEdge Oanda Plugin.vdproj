@@ -417,7 +417,7 @@
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.46, Culture=neutral, processorArchitecture=MSIL"
+            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.51, Culture=neutral, processorArchitecture=MSIL"
                 "ScatterAssemblies"
                 {
                     "_87E871536F3C94803B6D1431917324E6"
@@ -627,7 +627,7 @@
             }
             "{994432C3-9487-495D-8656-3E829A8DBDDE}:_2D8DF2AD490445C3B0F8ADD52AB0D23D"
             {
-            "DefaultLocation" = "8:[PersonalFolder]\\RE-Oanda-Plugin"
+            "DefaultLocation" = "8:[PersonalFolder][ProductName]"
             "Name" = "8:Document Folder"
             "AlwaysCreate" = "11:TRUE"
             "Condition" = "8:"
@@ -683,7 +683,7 @@
                 {
                     "{9EF0B969-E518-4E46-987F-47570745A589}:_E0DD567169CF41B983F1014DAB06174C"
                     {
-                    "Name" = "8:RightEdgeOandaPlugin"
+                    "Name" = "8:[ProductName]"
                     "AlwaysCreate" = "11:TRUE"
                     "Condition" = "8:"
                     "Transitive" = "11:FALSE"
@@ -724,21 +724,21 @@
             {
             "Name" = "8:1 - RightEdge Installed"
             "Condition" = "8:REINSTALLED"
-            "Message" = "8:RightEdge could not be detected. Do you have RightEdge 2008 Edition 1 installed? You must have RightEdge installed in order to install and use this plugin. Click 'YES' to be taken to the RightEdge website now. Click 'NO' to cancel the installation."
+            "Message" = "8:RightEdge could not be detected. Do you have RightEdge 2008 Edition 2 installed? You must have RightEdge installed in order to install and use this plugin. Click 'YES' to be taken to the RightEdge website now. Click 'NO' to cancel the installation."
             "InstallUrl" = "8:http://www.rightedgesystems.com/"
             }
             "{836E08B8-0285-4809-BA42-01DB6754A45D}:_F04E90A925C1474E88A5A43D0029F3FB"
             {
             "Name" = "8:2 - Plugin Directory Identified"
             "Condition" = "8:REPLUGDIR"
-            "Message" = "8:The RightEdge plugin folder could not be detected. Do you have RightEdge 2008 Edition 1 installed? You must have RightEdge installed in order to install and use this plugin. Click 'YES' to be taken to the RightEdge website now. Click 'NO' to cancel the installation."
+            "Message" = "8:The RightEdge plugin folder could not be detected. Do you have RightEdge 2008 Edition 2 installed? You must have RightEdge installed in order to install and use this plugin. Click 'YES' to be taken to the RightEdge website now. Click 'NO' to cancel the installation."
             "InstallUrl" = "8:http://www.rightedgesystems.com/"
             }
             "{836E08B8-0285-4809-BA42-01DB6754A45D}:_F21CAF8773BB4F44BA1FB677FAFD88C3"
             {
             "Name" = "8:3 - RightEdge.Common Version Verified"
             "Condition" = "8:RECOMMON"
-            "Message" = "8:RightEdge.Common assembly could not be detected or detected incompatible version. Do you have RightEdge 2008 Edition 1 installed? You must have RightEdge installed in order to install and use this plugin. Click 'YES' to be taken to the RightEdge website now. Click 'NO' to cancel the installation."
+            "Message" = "8:RightEdge.Common assembly could not be detected or detected incompatible version. Do you have RightEdge 2008 Edition 2 installed? You must have RightEdge installed in order to install and use this plugin. Click 'YES' to be taken to the RightEdge website now. Click 'NO' to cancel the installation."
             "InstallUrl" = "8:http://www.rightedgesystems.com/"
             }
         }
@@ -771,7 +771,7 @@
             {
             "Name" = "8:1 - Check for RightEdge install RegKey"
             "Root" = "2:2"
-            "RegKey" = "8:Software\\Yye Software\\RightEdge 2008 Edition 1\\{75C64119-DC54-DE69-F706-CF70F93EF855}"
+            "RegKey" = "8:Software\\Yye Software\\RightEdge 2008 Edition 2\\{0B6B4CCE-8BBE-C13A-933B-41E574AD071B}"
             "Value" = "8:_C73B8947943E437FB6B69968174B2B79"
             "Property" = "8:REINSTALLED"
             }
