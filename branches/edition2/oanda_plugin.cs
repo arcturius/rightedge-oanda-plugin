@@ -7376,6 +7376,8 @@ namespace RightEdgeOandaPlugin
                 int num_ticks = 500;
                 clearError();
 
+                _history_log.captureDebug("RetrieveData() request : sym='" + symbol.Name + "' freq='" + frequency + "' start='" + startDate.ToString() + "' end='" + endDate.ToString() + "' bar='" + barConstruction.ToString() + "'");
+
                 Interval interval = OandAUtils.convertToInterval(frequency);
                 CustomBarFrequency cbf = OandAUtils.convertToCustomBarFrequency(frequency);
 
@@ -7456,6 +7458,8 @@ namespace RightEdgeOandaPlugin
 
                     list.Add(OandAUtils.convertBarData(hp));
                 }
+
+                _history_log.captureDebug("  bar data : downloaded='" + hal.ResultObject.Count + "', filtered='" + (hal.ResultObject.Count - list.Count).ToString() + "', returned='" + list.Count + "'");
 
                 return list;
             }
