@@ -111,6 +111,18 @@
         }
         "Entry"
         {
+        "MsmKey" = "8:_B4BA357A4903C420F2F2A2A25F670FF9"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_B4BA357A4903C420F2F2A2A25F670FF9"
+        "OwnerKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
         "MsmKey" = "8:_B510C597ACDD46288C4091C28FC5406D"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
@@ -131,6 +143,12 @@
         {
         "MsmKey" = "8:_UNDEFINED"
         "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_UNDEFINED"
+        "OwnerKey" = "8:_B4BA357A4903C420F2F2A2A25F670FF9"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -417,7 +435,7 @@
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.51, Culture=neutral, processorArchitecture=MSIL"
+            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.54, Culture=neutral, processorArchitecture=MSIL"
                 "ScatterAssemblies"
                 {
                     "_87E871536F3C94803B6D1431917324E6"
@@ -553,6 +571,37 @@
             "Register" = "3:1"
             "Exclude" = "11:FALSE"
             "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_B4BA357A4903C420F2F2A2A25F670FF9"
+            {
+            "AssemblyRegister" = "3:1"
+            "AssemblyIsInGAC" = "11:FALSE"
+            "AssemblyAsmDisplayName" = "8:log4net, Version=1.2.10.0, Culture=neutral, PublicKeyToken=1b44e1d426115821, processorArchitecture=MSIL"
+                "ScatterAssemblies"
+                {
+                    "_B4BA357A4903C420F2F2A2A25F670FF9"
+                    {
+                    "Name" = "8:log4net.dll"
+                    "Attributes" = "3:512"
+                    }
+                }
+            "SourcePath" = "8:log4net.dll"
+            "TargetName" = "8:"
+            "Tag" = "8:"
+            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:TRUE"
+            "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_C6D25B945A624491B432BB8C303D0FF3"
@@ -786,7 +835,7 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:RightEdge Oanda Plugin"
         "ProductCode" = "8:{6042945B-A184-4B81-9946-554D0A494425}"
-        "PackageCode" = "8:{52C7349F-39A6-46BD-85E0-93D34DB70EE1}"
+        "PackageCode" = "8:{8034E8E8-015E-4FC1-8411-52EA8470C67A}"
         "UpgradeCode" = "8:{7CC1FA71-177A-45D9-A651-EE974CAC3ED7}"
         "RestartWWWService" = "11:FALSE"
         "RemovePreviousVersions" = "11:FALSE"
@@ -1593,6 +1642,20 @@
                         "ContextData" = "8:_RetargetableFolder"
                         "Attributes" = "3:6"
                         "Setting" = "3:1"
+                        "UsePlugInResources" = "11:FALSE"
+                        }
+                        "_8A9E0F0B2BA9D5C7D14EBD3379EF1265.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        {
+                        "Name" = "8:_8A9E0F0B2BA9D5C7D14EBD3379EF1265.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "DisplayName" = "8:"
+                        "Description" = "8:"
+                        "Type" = "3:2"
+                        "ContextData" = "8:InstallToGAC=;IsolateToManifest=_6689F4BFF087100A362F97ACDFC10761.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "Attributes" = "3:0"
+                        "Setting" = "3:2"
+                        "Value" = "8:_6689F4BFF087100A362F97ACDFC10761.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "DefaultValue" = "8:_6689F4BFF087100A362F97ACDFC10761.FD33CCB04BE64A5FA4921E2194D44F1B"
+                        "ParentName" = "8:_60E67F211D534ADBBDF161F79466199D.FD33CCB04BE64A5FA4921E2194D44F1B"
                         "UsePlugInResources" = "11:FALSE"
                         }
                         "_8B35AB1DA8662A53181C7982E5AB443F.FD33CCB04BE64A5FA4921E2194D44F1B"

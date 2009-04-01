@@ -4836,7 +4836,7 @@ namespace RightEdgeOandaPlugin
             }
             res.ResultObject = ares.ResultObject;
 
-            if (!activate_responder || channel != AccountSources.OutChannel) { return res; }
+            if (!activate_responder || channel == AccountSources.OutChannel) { return res; }
             //must be in or dual channel and activate_responder
             Account acct = res.ResultObject.FromInChannel;
             FXClientTaskResult tres = _parent.ResponseProcessor.ActivateAccountResponder(acct);
