@@ -15,6 +15,18 @@
     {
         "Entry"
         {
+        "MsmKey" = "8:_0791A1A6BC9D525DFF4DDAEC2A078438"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_0791A1A6BC9D525DFF4DDAEC2A078438"
+        "OwnerKey" = "8:_87E871536F3C94803B6D1431917324E6"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
         "MsmKey" = "8:_07FAEC77EEC64A54AC041A7B97D3A190"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
@@ -35,6 +47,18 @@
         {
         "MsmKey" = "8:_1FC7419A5FE64596B8C976E4B4A95AA6"
         "OwnerKey" = "8:_UNDEFINED"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_2ECC2F6B20003C3644F3B0AF3F79ACD3"
+        "OwnerKey" = "8:_0791A1A6BC9D525DFF4DDAEC2A078438"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_2ECC2F6B20003C3644F3B0AF3F79ACD3"
+        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -93,32 +117,8 @@
         }
         "Entry"
         {
-        "MsmKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
-        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
-        "OwnerKey" = "8:_87E871536F3C94803B6D1431917324E6"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
         "MsmKey" = "8:_B3E32E3A5A434E4AA459F92E23031DBD"
         "OwnerKey" = "8:_UNDEFINED"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_B4BA357A4903C420F2F2A2A25F670FF9"
-        "OwnerKey" = "8:_0C3D1DC463444D10B3A0893EB75C0933"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_B4BA357A4903C420F2F2A2A25F670FF9"
-        "OwnerKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
         "MsmSig" = "8:_UNDEFINED"
         }
         "Entry"
@@ -148,12 +148,6 @@
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_B4BA357A4903C420F2F2A2A25F670FF9"
-        "MsmSig" = "8:_UNDEFINED"
-        }
-        "Entry"
-        {
-        "MsmKey" = "8:_UNDEFINED"
         "OwnerKey" = "8:_B510C597ACDD46288C4091C28FC5406D"
         "MsmSig" = "8:_UNDEFINED"
         }
@@ -172,7 +166,13 @@
         "Entry"
         {
         "MsmKey" = "8:_UNDEFINED"
-        "OwnerKey" = "8:_96CFE453C47B79433750E7A0635B72C0"
+        "OwnerKey" = "8:_0791A1A6BC9D525DFF4DDAEC2A078438"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_UNDEFINED"
+        "OwnerKey" = "8:_2ECC2F6B20003C3644F3B0AF3F79ACD3"
         "MsmSig" = "8:_UNDEFINED"
         }
     }
@@ -272,7 +272,7 @@
                 {
                 "Name" = "8:.NET Framework"
                 "Message" = "8:[VSDNETMSG]"
-                "Version" = "8:2.0.50727"
+                "Version" = "8:3.5.30729"
                 "AllowLaterVersions" = "11:FALSE"
                 "InstallUrl" = "8:http://go.microsoft.com/fwlink/?LinkId=76617"
                 }
@@ -280,6 +280,37 @@
         }
         "File"
         {
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_0791A1A6BC9D525DFF4DDAEC2A078438"
+            {
+            "AssemblyRegister" = "3:1"
+            "AssemblyIsInGAC" = "11:FALSE"
+            "AssemblyAsmDisplayName" = "8:Common, Version=2008.2.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL"
+                "ScatterAssemblies"
+                {
+                    "_0791A1A6BC9D525DFF4DDAEC2A078438"
+                    {
+                    "Name" = "8:Common.dll"
+                    "Attributes" = "3:512"
+                    }
+                }
+            "SourcePath" = "8:Common.dll"
+            "TargetName" = "8:"
+            "Tag" = "8:"
+            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:TRUE"
+            "IsDependency" = "11:TRUE"
+            "IsolateTo" = "8:"
+            }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_07FAEC77EEC64A54AC041A7B97D3A190"
             {
             "SourcePath" = "8:..\\..\\Monitor\\Resources\\Status_Off.bmp"
@@ -338,6 +369,37 @@
             "Register" = "3:1"
             "Exclude" = "11:FALSE"
             "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
+            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_2ECC2F6B20003C3644F3B0AF3F79ACD3"
+            {
+            "AssemblyRegister" = "3:1"
+            "AssemblyIsInGAC" = "11:FALSE"
+            "AssemblyAsmDisplayName" = "8:log4net, Version=1.2.10.0, Culture=neutral, PublicKeyToken=1b44e1d426115821, processorArchitecture=MSIL"
+                "ScatterAssemblies"
+                {
+                    "_2ECC2F6B20003C3644F3B0AF3F79ACD3"
+                    {
+                    "Name" = "8:log4net.dll"
+                    "Attributes" = "3:512"
+                    }
+                }
+            "SourcePath" = "8:log4net.dll"
+            "TargetName" = "8:"
+            "Tag" = "8:"
+            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:TRUE"
+            "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_40C5F8542C69472E9E90F65E46BA05CD"
@@ -435,7 +497,7 @@
             {
             "AssemblyRegister" = "3:1"
             "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.54, Culture=neutral, processorArchitecture=MSIL"
+            "AssemblyAsmDisplayName" = "8:RightEdgeOandaPlugin, Version=1.1.2.57, Culture=neutral, processorArchitecture=MSIL"
                 "ScatterAssemblies"
                 {
                     "_87E871536F3C94803B6D1431917324E6"
@@ -522,37 +584,6 @@
             "IsDependency" = "11:FALSE"
             "IsolateTo" = "8:"
             }
-            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_96CFE453C47B79433750E7A0635B72C0"
-            {
-            "AssemblyRegister" = "3:1"
-            "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:Common, Version=2008.2.0.0, Culture=neutral, PublicKeyToken=825834b19e38a0a8, processorArchitecture=MSIL"
-                "ScatterAssemblies"
-                {
-                    "_96CFE453C47B79433750E7A0635B72C0"
-                    {
-                    "Name" = "8:Common.dll"
-                    "Attributes" = "3:512"
-                    }
-                }
-            "SourcePath" = "8:Common.dll"
-            "TargetName" = "8:"
-            "Tag" = "8:"
-            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:TRUE"
-            "IsDependency" = "11:TRUE"
-            "IsolateTo" = "8:"
-            }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_B3E32E3A5A434E4AA459F92E23031DBD"
             {
             "SourcePath" = "8:..\\..\\Monitor\\Resources\\AccountValuesMonitor.ico"
@@ -571,37 +602,6 @@
             "Register" = "3:1"
             "Exclude" = "11:FALSE"
             "IsDependency" = "11:FALSE"
-            "IsolateTo" = "8:"
-            }
-            "{9F6F8455-1EF1-4B85-886A-4223BCC8E7F7}:_B4BA357A4903C420F2F2A2A25F670FF9"
-            {
-            "AssemblyRegister" = "3:1"
-            "AssemblyIsInGAC" = "11:FALSE"
-            "AssemblyAsmDisplayName" = "8:log4net, Version=1.2.10.0, Culture=neutral, PublicKeyToken=1b44e1d426115821, processorArchitecture=MSIL"
-                "ScatterAssemblies"
-                {
-                    "_B4BA357A4903C420F2F2A2A25F670FF9"
-                    {
-                    "Name" = "8:log4net.dll"
-                    "Attributes" = "3:512"
-                    }
-                }
-            "SourcePath" = "8:log4net.dll"
-            "TargetName" = "8:"
-            "Tag" = "8:"
-            "Folder" = "8:_4BC35842039A42D392BAF753364DB851"
-            "Condition" = "8:"
-            "Transitive" = "11:FALSE"
-            "Vital" = "11:TRUE"
-            "ReadOnly" = "11:FALSE"
-            "Hidden" = "11:FALSE"
-            "System" = "11:FALSE"
-            "Permanent" = "11:FALSE"
-            "SharedLegacy" = "11:FALSE"
-            "PackageAs" = "3:1"
-            "Register" = "3:1"
-            "Exclude" = "11:TRUE"
-            "IsDependency" = "11:TRUE"
             "IsolateTo" = "8:"
             }
             "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_C6D25B945A624491B432BB8C303D0FF3"
@@ -834,14 +834,14 @@
         {
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:RightEdge Oanda Plugin"
-        "ProductCode" = "8:{6042945B-A184-4B81-9946-554D0A494425}"
-        "PackageCode" = "8:{8034E8E8-015E-4FC1-8411-52EA8470C67A}"
+        "ProductCode" = "8:{1E50A3DC-9F98-4757-B873-843DC2F71EA6}"
+        "PackageCode" = "8:{013FAEE6-099C-46B9-A2E1-09752E0EAA13}"
         "UpgradeCode" = "8:{7CC1FA71-177A-45D9-A651-EE974CAC3ED7}"
         "RestartWWWService" = "11:FALSE"
         "RemovePreviousVersions" = "11:FALSE"
         "DetectNewerInstalledVersion" = "11:TRUE"
         "InstallAllUsers" = "11:FALSE"
-        "ProductVersion" = "8:1.1.1"
+        "ProductVersion" = "8:1.1.2"
         "Manufacturer" = "8:Open Source"
         "ARPHELPTELEPHONE" = "8:"
         "ARPHELPLINK" = "8:http://groups.google.com/group/rightedge-oanda-plugin-development/"

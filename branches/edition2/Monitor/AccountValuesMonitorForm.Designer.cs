@@ -31,6 +31,8 @@
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(AccountValuesMonitorForm));
             this.toolStripContainer1 = new System.Windows.Forms.ToolStripContainer();
             this.statusStrip1 = new System.Windows.Forms.StatusStrip();
+            this.statusLabel_State = new System.Windows.Forms.ToolStripStatusLabel();
+            this.statusLabel_Message = new System.Windows.Forms.ToolStripStatusLabel();
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
             this.Account = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.AccountName = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -58,12 +60,11 @@
             this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
             this.toolStripTextBox_EntityFileName = new System.Windows.Forms.ToolStripTextBox();
             this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
-            this.statusLabel_State = new System.Windows.Forms.ToolStripStatusLabel();
-            this.statusLabel_Message = new System.Windows.Forms.ToolStripStatusLabel();
             this.toolStripContainer1.BottomToolStripPanel.SuspendLayout();
             this.toolStripContainer1.ContentPanel.SuspendLayout();
             this.toolStripContainer1.TopToolStripPanel.SuspendLayout();
             this.toolStripContainer1.SuspendLayout();
+            this.statusStrip1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).BeginInit();
             this.menuStrip1.SuspendLayout();
             this.toolStrip1.SuspendLayout();
@@ -80,7 +81,7 @@
             // toolStripContainer1.ContentPanel
             // 
             this.toolStripContainer1.ContentPanel.Controls.Add(this.dataGridView1);
-            this.toolStripContainer1.ContentPanel.Size = new System.Drawing.Size(693, 135);
+            this.toolStripContainer1.ContentPanel.Size = new System.Drawing.Size(693, 110);
             this.toolStripContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.toolStripContainer1.Location = new System.Drawing.Point(0, 0);
             this.toolStripContainer1.Name = "toolStripContainer1";
@@ -98,13 +99,31 @@
             // 
             this.statusStrip1.Dock = System.Windows.Forms.DockStyle.None;
             this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-                this.statusLabel_State,
-                this.statusLabel_Message});
+            this.statusLabel_State,
+            this.statusLabel_Message});
             this.statusStrip1.Location = new System.Drawing.Point(0, 0);
             this.statusStrip1.Name = "statusStrip1";
             this.statusStrip1.ShowItemToolTips = true;
             this.statusStrip1.Size = new System.Drawing.Size(693, 22);
             this.statusStrip1.TabIndex = 0;
+            // 
+            // statusLabel_State
+            // 
+            this.statusLabel_State.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+            this.statusLabel_State.Image = global::Monitor.Properties.Resources.Status_Off;
+            this.statusLabel_State.Name = "statusLabel_State";
+            this.statusLabel_State.Size = new System.Drawing.Size(16, 17);
+            this.statusLabel_State.ToolTipText = "Auto refresh off.";
+            // 
+            // statusLabel_Message
+            // 
+            this.statusLabel_Message.AutoToolTip = true;
+            this.statusLabel_Message.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.statusLabel_Message.ForeColor = System.Drawing.SystemColors.ControlText;
+            this.statusLabel_Message.Name = "statusLabel_Message";
+            this.statusLabel_Message.Size = new System.Drawing.Size(662, 17);
+            this.statusLabel_Message.Spring = true;
+            this.statusLabel_Message.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             // 
             // dataGridView1
             // 
@@ -123,7 +142,7 @@
             this.dataGridView1.Location = new System.Drawing.Point(0, 0);
             this.dataGridView1.Name = "dataGridView1";
             this.dataGridView1.ReadOnly = true;
-            this.dataGridView1.Size = new System.Drawing.Size(693, 135);
+            this.dataGridView1.Size = new System.Drawing.Size(693, 110);
             this.dataGridView1.TabIndex = 0;
             // 
             // Account
@@ -284,7 +303,7 @@
             this.toolStripLabel1,
             this.toolStripTextBox_EntityFileName,
             this.toolStripSeparator5});
-            this.toolStrip2.Location = new System.Drawing.Point(339, 24);
+            this.toolStrip2.Location = new System.Drawing.Point(3, 49);
             this.toolStrip2.Name = "toolStrip2";
             this.toolStrip2.Size = new System.Drawing.Size(335, 25);
             this.toolStrip2.TabIndex = 2;
@@ -333,24 +352,6 @@
             this.toolStripSeparator5.Name = "toolStripSeparator5";
             this.toolStripSeparator5.Size = new System.Drawing.Size(6, 25);
             // 
-            // statusLabel_State
-            // 
-            this.statusLabel_State.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
-            this.statusLabel_State.Image = global::Monitor.Properties.Resources.Status_Off;
-            this.statusLabel_State.Name = "statusLabel_State";
-            this.statusLabel_State.Size = new System.Drawing.Size(16, 17);
-            this.statusLabel_State.ToolTipText = "Auto refresh off.";
-            // 
-            // statusLabel_Message
-            // 
-            this.statusLabel_Message.AutoToolTip = true;
-            this.statusLabel_Message.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.statusLabel_Message.ForeColor = System.Drawing.SystemColors.ControlText;
-            this.statusLabel_Message.Name = "statusLabel_Message";
-            this.statusLabel_Message.Size = new System.Drawing.Size(613, 17);
-            this.statusLabel_Message.Spring = true;
-            this.statusLabel_Message.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            // 
             // AccountValuesMonitorForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -368,6 +369,8 @@
             this.toolStripContainer1.TopToolStripPanel.PerformLayout();
             this.toolStripContainer1.ResumeLayout(false);
             this.toolStripContainer1.PerformLayout();
+            this.statusStrip1.ResumeLayout(false);
+            this.statusStrip1.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).EndInit();
             this.menuStrip1.ResumeLayout(false);
             this.menuStrip1.PerformLayout();

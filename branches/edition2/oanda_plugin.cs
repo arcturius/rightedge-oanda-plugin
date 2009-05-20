@@ -574,7 +574,7 @@ namespace RightEdgeOandaPlugin
             CandlePoint cpoint = hpoint.GetCandlePoint();
             BarData nb = new BarData();
 
-            nb.PriceDateTime = cpoint.Timestamp;
+            nb.BarStartTime = cpoint.Timestamp;
             nb.Open = cpoint.Open;
             nb.Close = cpoint.Close;
             nb.High = cpoint.Max;
