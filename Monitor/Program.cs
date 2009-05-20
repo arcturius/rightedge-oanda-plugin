@@ -14,7 +14,9 @@ namespace Monitor
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new AccountValuesMonitorForm());
+            AccountValuesMonitorForm f = new AccountValuesMonitorForm();
+            f.Text = "Account Values Monitor (" + (IntPtr.Size * 8).ToString() + "bit mode)";
+            Application.Run(f);
         }
     }
 }
